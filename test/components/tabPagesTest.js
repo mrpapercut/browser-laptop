@@ -1,9 +1,9 @@
-/* global describe, it, before */
+/* global describe, it, before, beforeEach */
 
 const Brave = require('../lib/brave')
 const appConfig = require('../../js/constants/appConfig')
 const settings = require('../../js/constants/settings')
-const {urlInput, newFrameButton, tabsTabs, tabPage, tabPage1, tabPage2, closeTab, activeWebview} = require('../lib/selectors')
+const {urlInput, newFrameButton, tabsTabs, tabPage, tabPage1, tabPage2, activeWebview} = require('../lib/selectors')
 
 describe('tab pages', function () {
   function * setup (client) {
@@ -14,9 +14,9 @@ describe('tab pages', function () {
   }
 
   describe('basic tab page functionality', function () {
-    Brave.beforeAll(this)
+    Brave.beforeEach(this)
 
-    before(function * () {
+    beforeEach(function * () {
       yield setup(this.app.client)
       yield this.app.client
         .waitForElementCount(tabPage, 0)
@@ -35,16 +35,19 @@ describe('tab pages', function () {
     })
 
     it('shows no tab pages when you have only 1 page', function * () {
-      yield this.app.client.click(closeTab)
+      yield this.app.client
+        .waitForExist('[data-test-id="tab"][data-frame-key="1"]')
+        .click('[data-test-active-tab]')
+        .click('[data-test-id="closeTabIcon"]')
         .waitForElementCount(tabPage, 0)
     })
 
     it('focuses active tab\'s page when closing last tab on page', function * () {
-      yield this.app.client.waitForVisible('.tab.active')
+      yield this.app.client.waitForVisible('[data-test-active-tab]')
     })
 
     describe('allows changing to tab pages', function () {
-      before(function * () {
+      beforeEach(function * () {
         // Make sure there are 2 tab pages
         yield this.app.client
           .click(newFrameButton)
@@ -67,7 +70,7 @@ describe('tab pages', function () {
         const defaultTabsPerPage = appConfig.defaultSettings[settings.TABS_PER_PAGE]
         yield this.app.client
           .changeSetting(settings.TABS_PER_PAGE, 1)
-          .waitForElementCount(tabPage, defaultTabsPerPage + 1)
+          .waitForElementCount(tabPage, defaultTabsPerPage)
       })
     })
   })

@@ -20,6 +20,7 @@ const appConstants = {
   APP_SET_STATE: _,
   APP_REMOVE_SITE: _,
   APP_MOVE_SITE: _,
+  APP_APPLY_SITE_RECORDS: _,
   APP_MERGE_DOWNLOAD_DETAIL: _, // Sets an individual download detail
   APP_CLEAR_COMPLETED_DOWNLOADS: _, // Removes all completed downloads
   APP_ADD_PASSWORD: _, /** @param {Object} passwordDetail */
@@ -41,10 +42,11 @@ const appConstants = {
   APP_IMPORT_BROWSER_DATA: _,
   APP_UPDATE_LEDGER_INFO: _,
   APP_LEDGER_RECOVERY_STATUS_CHANGED: _,
+  APP_UPDATE_LOCATION_INFO: _,
   APP_UPDATE_PUBLISHER_INFO: _,
-  APP_SHOW_MESSAGE_BOX: _, /** @param {Object} detail */
-  APP_HIDE_MESSAGE_BOX: _, /** @param {string} message */
-  APP_CLEAR_MESSAGE_BOXES: _, /** @param {string} origin */
+  APP_SHOW_NOTIFICATION: _, /** @param {Object} detail */
+  APP_HIDE_NOTIFICATION: _, /** @param {string} message */
+  APP_CLEAR_NOTIFICATIONS: _, /** @param {string} origin */
   APP_ADD_WORD: _, /** @param {string} word, @param {boolean} learn */
   APP_SET_DICTIONARY: _, /** @param {string} locale */
   APP_BACKUP_KEYS: _,
@@ -78,12 +80,24 @@ const appConstants = {
   APP_DOWNLOAD_DELETED: _,
   APP_DOWNLOAD_CLEARED: _,
   APP_DOWNLOAD_REDOWNLOADED: _,
+  APP_SHOW_DOWNLOAD_DELETE_CONFIRMATION: _,
+  APP_HIDE_DOWNLOAD_DELETE_CONFIRMATION: _,
   APP_ALLOW_FLASH_ONCE: _,
   APP_ALLOW_FLASH_ALWAYS: _,
   APP_FLASH_PERMISSION_REQUESTED: _,
   APP_SHUTTING_DOWN: _,
   APP_CLIPBOARD_TEXT_UPDATED: _,
-  APP_TAB_CLONED: _
+  APP_TAB_TOGGLE_DEV_TOOLS: _,
+  APP_TAB_CLONED: _,
+  APP_SET_OBJECT_ID: _,
+  APP_SAVE_SYNC_INIT_DATA: _,
+  APP_RESET_SYNC_DATA: _,
+  APP_ADD_NOSCRIPT_EXCEPTIONS: _,
+  APP_TAB_MESSAGE_BOX_SHOWN: _,
+  APP_TAB_MESSAGE_BOX_DISMISSED: _,
+  APP_TAB_MESSAGE_BOX_UPDATED: _,
+  APP_NAVIGATOR_HANDLER_REGISTERED: _,
+  APP_NAVIGATOR_HANDLER_UNREGISTERED: _
 }
 
 module.exports = mapValuesByKeys(appConstants)

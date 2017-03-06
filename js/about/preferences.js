@@ -6,24 +6,20 @@
 const React = require('react')
 const ImmutableComponent = require('../components/immutableComponent')
 const Immutable = require('immutable')
+const UrlUtil = require('../lib/urlutil')
 
 // Components
-const SwitchControl = require('../components/switchControl')
+const PreferenceNavigation = require('../../app/renderer/components/preferences/preferenceNavigation')
 const ModalOverlay = require('../components/modalOverlay')
-const {SettingsList, SettingItem} = require('../../app/renderer/components/settings')
+const {SettingsList, SettingItem, SettingCheckbox} = require('../../app/renderer/components/settings')
 const {SettingTextbox} = require('../../app/renderer/components/textbox')
-const {FormDropdown, SettingDropdown} = require('../../app/renderer/components/dropdown')
+const {SettingDropdown} = require('../../app/renderer/components/dropdown')
 const Button = require('../components/button')
 
 // Tabs
 const PaymentsTab = require('../../app/renderer/components/preferences/paymentsTab')
-
-const cx = require('../lib/classSet')
-const ledgerExportUtil = require('../../app/common/lib/ledgerExportUtil')
-const addExportFilenamePrefixToTransactions = ledgerExportUtil.addExportFilenamePrefixToTransactions
-const appUrlUtil = require('../lib/appUrlUtil')
-const aboutUrls = appUrlUtil.aboutUrls
-const aboutContributionsUrl = aboutUrls.get('about:contributions')
+const SyncTab = require('../../app/renderer/components/preferences/syncTab')
+const PluginsTab = require('../../app/renderer/components/preferences/pluginsTab')
 
 const {getZoomValuePercentage} = require('../lib/zoom')
 
@@ -32,18 +28,15 @@ const appConfig = require('../constants/appConfig')
 const preferenceTabs = require('../constants/preferenceTabs')
 const messages = require('../constants/messages')
 const settings = require('../constants/settings')
+const {changeSetting} = require('../../app/renderer/lib/settingsUtil')
 const coinbaseCountries = require('../constants/coinbaseCountries')
 const {passwordManagers, extensionIds} = require('../constants/passwordManagers')
-const {startsWithOption, newTabMode, bookmarksToolbarMode, tabCloseAction} = require('../../app/common/constants/settingsEnums')
+const {startsWithOption, newTabMode, bookmarksToolbarMode, tabCloseAction, fullscreenOption} = require('../../app/common/constants/settingsEnums')
 
-const WidevineInfo = require('../../app/renderer/components/widevineInfo')
 const aboutActions = require('./aboutActions')
 const getSetting = require('../settings').getSetting
 const SortableTable = require('../components/sortableTable')
 const searchProviders = require('../data/searchProviders')
-const punycode = require('punycode')
-const moment = require('moment')
-moment.locale(navigator.language)
 
 const adblock = appConfig.resourceNames.ADBLOCK
 const cookieblock = appConfig.resourceNames.COOKIEBLOCK
@@ -53,10 +46,8 @@ const httpsEverywhere = appConfig.resourceNames.HTTPS_EVERYWHERE
 const safeBrowsing = appConfig.resourceNames.SAFE_BROWSING
 const noScript = appConfig.resourceNames.NOSCRIPT
 const flash = appConfig.resourceNames.FLASH
-const widevine = appConfig.resourceNames.WIDEVINE
 
 const isDarwin = navigator.platform === 'MacIntel'
-const isWindows = navigator.platform && navigator.platform.includes('Win')
 
 const ipc = window.chrome.ipcRenderer
 
@@ -92,219 +83,6 @@ const braveryPermissionNames = {
   'httpsEverywhere': ['boolean'],
   'fingerprintingProtection': ['boolean'],
   'noScript': ['boolean', 'number']
-}
-
-const changeSetting = (cb, key, e) => {
-  if (e.target.type === 'checkbox') {
-    cb(key, e.target.value)
-  } else {
-    let value = e.target.value
-    if (e.target.dataset && e.target.dataset.type === 'number') {
-      value = parseInt(value, 10)
-    } else if (e.target.dataset && e.target.dataset.type === 'float') {
-      value = parseFloat(value)
-    }
-    if (e.target.type === 'number') {
-      value = value.replace(/\D/g, '')
-      value = parseInt(value, 10)
-      if (Number.isNaN(value)) {
-        return
-      }
-      value = Math.min(e.target.getAttribute('max'), Math.max(value, e.target.getAttribute('min')))
-    }
-    cb(key, value)
-  }
-}
-
-class SettingCheckbox extends ImmutableComponent {
-  constructor () {
-    super()
-    this.onClick = this.onClick.bind(this)
-  }
-
-  onClick (e) {
-    if (this.props.disabled) {
-      return
-    }
-    return this.props.onChange ? this.props.onChange(e) : changeSetting(this.props.onChangeSetting, this.props.prefKey, e)
-  }
-
-  render () {
-    const props = {
-      style: this.props.style,
-      className: 'settingItem'
-    }
-    if (this.props.id) {
-      props.id = this.props.id
-    }
-    return <div {...props}>
-      <SwitchControl id={this.props.prefKey}
-        disabled={this.props.disabled}
-        onClick={this.onClick}
-        checkedOn={this.props.checked !== undefined ? this.props.checked : getSetting(this.props.prefKey, this.props.settings)} />
-      <label data-l10n-id={this.props.dataL10nId} htmlFor={this.props.prefKey} />
-      {this.props.options}
-    </div>
-  }
-}
-
-class SiteSettingCheckbox extends ImmutableComponent {
-  constructor () {
-    super()
-    this.onClick = this.onClick.bind(this)
-  }
-
-  onClick (e) {
-    if (this.props.disabled || !this.props.hostPattern) {
-      return
-    } else {
-      const value = !!e.target.value
-      value === this.props.defaultValue
-        ? aboutActions.removeSiteSetting(this.props.hostPattern,
-            this.props.prefKey)
-        : aboutActions.changeSiteSetting(this.props.hostPattern,
-            this.props.prefKey, value)
-    }
-  }
-
-  render () {
-    return <div style={this.props.style} className='settingItem siteSettingItem'>
-      <SwitchControl
-        disabled={this.props.disabled}
-        onClick={this.onClick}
-        checkedOn={this.props.checked} />
-    </div>
-  }
-}
-
-class LedgerTable extends ImmutableComponent {
-  get synopsis () {
-    return this.props.ledgerData.get('synopsis')
-  }
-
-  getFormattedTime (synopsis) {
-    var d = synopsis.get('daysSpent')
-    var h = synopsis.get('hoursSpent')
-    var m = synopsis.get('minutesSpent')
-    var s = synopsis.get('secondsSpent')
-    if (d << 0 > 364) {
-      return '>1y'
-    }
-    d = (d << 0 === 0) ? '' : (d + 'd ')
-    h = (h << 0 === 0) ? '' : (h + 'h ')
-    m = (m << 0 === 0) ? '' : (m + 'm ')
-    s = (s << 0 === 0) ? '' : (s + 's ')
-    return (d + h + m + s + '')
-  }
-
-  getHostPattern (synopsis) {
-    return `https?://${synopsis.get('site')}`
-  }
-
-  getVerifiedIcon (synopsis) {
-    return <span className='verified' />
-  }
-
-  enabledForSite (synopsis) {
-    const hostSettings = this.props.siteSettings.get(this.getHostPattern(synopsis))
-    if (hostSettings) {
-      const result = hostSettings.get('ledgerPayments')
-      if (typeof result === 'boolean') {
-        return result
-      }
-    }
-    return true
-  }
-
-  shouldShow (synopsis) {
-    const hostSettings = this.props.siteSettings.get(this.getHostPattern(synopsis))
-    if (hostSettings) {
-      const result = hostSettings.get('ledgerPaymentsShown')
-      if (typeof result === 'boolean') {
-        return result
-      }
-    }
-    return true
-  }
-
-  banSite (hostPattern) {
-    aboutActions.changeSiteSetting(hostPattern, 'ledgerPaymentsShown', false)
-  }
-
-  getRow (synopsis) {
-    if (!synopsis || !synopsis.get || !this.shouldShow(synopsis)) {
-      return []
-    }
-    const faviconURL = synopsis.get('faviconURL')
-    const rank = synopsis.get('rank')
-    const views = synopsis.get('views')
-    const verified = synopsis.get('verified')
-    const duration = synopsis.get('duration')
-    const publisherURL = synopsis.get('publisherURL')
-    const percentage = synopsis.get('percentage')
-    const site = synopsis.get('site')
-    const defaultSiteSetting = true
-
-    return [
-      {
-        html: <div className='neverShowSiteIcon' onClick={this.banSite.bind(this, this.getHostPattern(synopsis))}><span className='fa fa-ban' /></div>,
-        value: ''
-      },
-      rank,
-      {
-        html: <div className='site'>{verified ? this.getVerifiedIcon() : null}<a href={publisherURL} target='_blank'>{faviconURL ? <img src={faviconURL} alt={site} /> : <span className='fa fa-file-o' />}<span>{site}</span></a></div>,
-        value: site
-      },
-      {
-        html: <SiteSettingCheckbox hostPattern={this.getHostPattern(synopsis)} defaultValue={defaultSiteSetting} prefKey='ledgerPayments' siteSettings={this.props.siteSettings} checked={this.enabledForSite(synopsis)} />,
-        value: this.enabledForSite(synopsis) ? 1 : 0
-      },
-      views,
-      {
-        html: this.getFormattedTime(synopsis),
-        value: duration
-      },
-      percentage
-    ]
-  }
-
-  render () {
-    if (!this.synopsis || !this.synopsis.size) {
-      return null
-    }
-    return <div className='ledgerTable'>
-      <div className='hideExcludedSites'>
-        <SettingCheckbox
-          dataL10nId='hideExcluded'
-          prefKey={settings.HIDE_EXCLUDED_SITES}
-          settings={this.props.settings}
-          onChangeSetting={this.props.onChangeSetting}
-        />
-      </div>
-      <SortableTable
-        headings={['remove', 'rank', 'publisher', 'include', 'views', 'timeSpent', 'percentage']}
-        defaultHeading='rank'
-        columnClassNames={['', 'alignRight', '', '', 'alignRight', 'alignRight', 'alignRight']}
-        rowClassNames={
-          this.synopsis.map((item) =>
-            this.enabledForSite(item) ? '' : 'paymentsDisabled').toJS()
-        }
-        onContextMenu={aboutActions.contextMenu}
-        contextMenuName='synopsis'
-        rowObjects={this.synopsis.map((entry) => {
-          return {
-            hostPattern: this.getHostPattern(entry),
-            location: entry.get('publisherURL')
-          }
-        }).toJS()}
-        rows={this.synopsis.filter((synopsis) => {
-          return !getSetting(settings.HIDE_EXCLUDED_SITES, this.props.settings) || this.enabledForSite(synopsis)
-        }).map((synopsis) => {
-          return this.getRow(synopsis)
-        }).toJS()}
-        />
-    </div>
-  }
 }
 
 class BitcoinDashboard extends ImmutableComponent {
@@ -525,90 +303,6 @@ class BitcoinDashboard extends ImmutableComponent {
   }
 }
 
-class PaymentHistory extends ImmutableComponent {
-  get ledgerData () {
-    return this.props.ledgerData
-  }
-
-  render () {
-    const transactions = Immutable.fromJS(
-        addExportFilenamePrefixToTransactions(this.props.ledgerData.get('transactions').toJS())
-    )
-
-    return <div className='paymentHistoryTable'>
-      <table className='sort'>
-        <thead>
-          <tr>
-            <th className='sort-header' data-l10n-id='date' />
-            <th className='sort-header' data-l10n-id='totalAmount' />
-            <th className='sort-header' data-l10n-id='receiptLink' />
-          </tr>
-        </thead>
-        <tbody>
-          {
-            transactions.map(function (row) {
-              return <PaymentHistoryRow transaction={row} ledgerData={this.props.ledgerData} />
-            }.bind(this))
-          }
-        </tbody>
-      </table>
-    </div>
-  }
-}
-
-class PaymentHistoryRow extends ImmutableComponent {
-
-  get transaction () {
-    return this.props.transaction
-  }
-
-  get timestamp () {
-    return this.transaction.get('submissionStamp')
-  }
-
-  get formattedDate () {
-    return formattedDateFromTimestamp(this.timestamp)
-  }
-
-  get ledgerData () {
-    return this.props.ledgerData
-  }
-
-  get satoshis () {
-    return this.transaction.getIn(['contribution', 'satoshis'])
-  }
-
-  get currency () {
-    return this.transaction.getIn(['contribution', 'fiat', 'currency'])
-  }
-
-  get totalAmount () {
-    var fiatAmount = this.transaction.getIn(['contribution', 'fiat', 'amount'])
-    return (fiatAmount && typeof fiatAmount === 'number' ? fiatAmount.toFixed(2) : '0.00')
-  }
-
-  get viewingId () {
-    return this.transaction.get('viewingId')
-  }
-
-  get receiptFileName () {
-    return `${this.transaction.get('exportFilenamePrefix')}.pdf`
-  }
-
-  render () {
-    var date = this.formattedDate
-    var totalAmountStr = `${this.totalAmount} ${this.currency}`
-
-    return <tr>
-      <td className='narrow' data-sort={this.timestamp}>{date}</td>
-      <td className='wide' data-sort={this.satoshis}>{totalAmountStr}</td>
-      <td className='wide'>
-        <a href={aboutContributionsUrl + '#' + this.viewingId} target='_blank'>{this.receiptFileName}</a>
-      </td>
-    </tr>
-  }
-}
-
 class GeneralTab extends ImmutableComponent {
   constructor (e) {
     super()
@@ -641,14 +335,21 @@ class GeneralTab extends ImmutableComponent {
   }
 
   render () {
-    var languageOptions = this.props.languageCodes.map(function (lc) {
+    const languageOptions = this.props.languageCodes.map(function (lc) {
       return (
         <option data-l10n-id={lc} value={lc} />
       )
     })
-    var homepageValue = getSetting(settings.HOMEPAGE, this.props.settings)
+
+    let homepageValue = getSetting(settings.HOMEPAGE, this.props.settings)
     if (typeof homepageValue === 'string') {
-      homepageValue = punycode.toASCII(homepageValue)
+      const punycodeUrl = UrlUtil.getPunycodeUrl(homepageValue)
+      if (punycodeUrl.replace(/\/$/, '') !== homepageValue) {
+        homepageValue = UrlUtil.getPunycodeUrl(homepageValue)
+      }
+
+      // we use | as a separator for multiple home pages
+      homepageValue = homepageValue.replace(/%7C/g, '|')
     }
     const homepage = homepageValue && homepageValue.trim()
     const disableShowHomeButton = !homepage || !homepage.length
@@ -681,7 +382,14 @@ class GeneralTab extends ImmutableComponent {
             <option data-l10n-id='newTabEmpty' value={newTabMode.EMPTY_NEW_TAB} />
           </SettingDropdown>
         </SettingItem>
-        <SettingItem dataL10nId='myHomepage'>
+        <div className='iconTitle'>
+          <span data-l10n-id='myHomepage' />
+          <span className='fa fa-info-circle iconLink' onClick={aboutActions.newFrame.bind(null, {
+            location: 'https://github.com/brave/browser-laptop/wiki/End-User-FAQ#how-to-set-up-multiple-home-pages'
+          }, true)}
+            data-l10n-id='multipleHomePages' />
+        </div>
+        <SettingItem>
           <SettingTextbox
             spellCheck='false'
             data-l10n-id='homepageInput'
@@ -733,6 +441,7 @@ class GeneralTab extends ImmutableComponent {
             settings={this.props.settings} onChangeSetting={this.props.onChangeSetting} />
         </SettingItem>
       </SettingsList>
+      <div data-l10n-id='requiresRestart' className='requiresRestart' />
     </SettingsList>
   }
 }
@@ -836,27 +545,21 @@ class TabsTab extends ImmutableComponent {
           </SettingDropdown>
         </SettingItem>
         <SettingItem dataL10nId='tabCloseAction'>
-          <FormDropdown
+          <SettingDropdown
             value={getSetting(settings.TAB_CLOSE_ACTION, this.props.settings)}
             onChange={changeSetting.bind(null, this.props.onChangeSetting, settings.TAB_CLOSE_ACTION)}>
             <option data-l10n-id='tabCloseActionLastActive' value={tabCloseAction.LAST_ACTIVE} />
             <option data-l10n-id='tabCloseActionNext' value={tabCloseAction.NEXT} />
-            <option data-l10n-id='tabCloseActionFirst' value={tabCloseAction.FIRST} />
             <option data-l10n-id='tabCloseActionParent' value={tabCloseAction.PARENT} />
-          </FormDropdown>
+          </SettingDropdown>
         </SettingItem>
         <SettingCheckbox dataL10nId='switchToNewTabs' prefKey={settings.SWITCH_TO_NEW_TABS} settings={this.props.settings} onChangeSetting={this.props.onChangeSetting} />
         <SettingCheckbox dataL10nId='paintTabs' prefKey={settings.PAINT_TABS} settings={this.props.settings} onChangeSetting={this.props.onChangeSetting} />
         <SettingCheckbox dataL10nId='showTabPreviews' prefKey={settings.SHOW_TAB_PREVIEWS} settings={this.props.settings} onChangeSetting={this.props.onChangeSetting} />
+        <SettingItem dataL10nId='dashboardSettingsTitle'>
+          <SettingCheckbox dataL10nId='dashboardShowImages' prefKey={settings.SHOW_DASHBOARD_IMAGES} settings={this.props.settings} onChangeSetting={this.props.onChangeSetting} />
+        </SettingItem>
       </SettingsList>
-    </div>
-  }
-}
-
-class SyncTab extends ImmutableComponent {
-  render () {
-    return <div>
-      Sync settings coming soon
     </div>
   }
 }
@@ -1074,13 +777,8 @@ class SecurityTab extends ImmutableComponent {
       })
     }
   }
-  onToggleWidevine (e) {
-    aboutActions.setResourceEnabled(widevine, e.target.value)
-  }
   render () {
     const lastPassPreferencesUrl = ('chrome-extension://' + extensionIds[passwordManagers.LAST_PASS] + '/tabDialog.html?dialog=preferences&cmd=open')
-    const isLinux = navigator.appVersion.indexOf('Linux') !== -1
-    const flashInstalled = getSetting(settings.FLASH_INSTALLED, this.props.settings)
 
     return <div>
       <div className='sectionTitle' data-l10n-id='privateData' />
@@ -1104,7 +802,8 @@ class SecurityTab extends ImmutableComponent {
             <option data-l10n-id='onePassword' value={passwordManagers.ONE_PASSWORD} />
             <option data-l10n-id='dashlane' value={passwordManagers.DASHLANE} />
             <option data-l10n-id='lastPass' value={passwordManagers.LAST_PASS} />
-            <option data-l10n-id='enpass' value={passwordManagers.ENPASS} />
+            <option data-l10n-id='bitwarden' value={passwordManagers.BITWARDEN} />
+            { /* <option data-l10n-id='enpass' value={passwordManagers.ENPASS} /> */ }
             <option data-l10n-id='doNotManageMyPasswords' value={passwordManagers.UNMANAGED} />
           </SettingDropdown>
         </SettingItem>
@@ -1133,48 +832,23 @@ class SecurityTab extends ImmutableComponent {
             location: 'about:autofill'
           }, true)} disabled={!getSetting(settings.AUTOFILL_ENABLED, this.props.settings)} />
       </SettingsList>
+      <div className='sectionTitle' data-l10n-id='fullscreenContent' />
+      <SettingsList>
+        <SettingItem>
+          <SettingDropdown
+            value={getSetting(settings.FULLSCREEN_CONTENT, this.props.settings)}
+            onChange={changeSetting.bind(null, this.props.onChangeSetting, settings.FULLSCREEN_CONTENT)}>
+            <option data-l10n-id='alwaysAsk' value={fullscreenOption.ALWAYS_ASK} />
+            <option data-l10n-id='alwaysAllow' value={fullscreenOption.ALWAYS_ALLOW} />
+          </SettingDropdown>
+        </SettingItem>
+      </SettingsList>
       <div className='sectionTitle' data-l10n-id='doNotTrackTitle' />
       <SettingsList>
         <SettingCheckbox dataL10nId='doNotTrack' prefKey={settings.DO_NOT_TRACK} settings={this.props.settings} onChangeSetting={this.props.onChangeSetting} />
       </SettingsList>
-      <div className='sectionTitle' data-l10n-id='pluginSettings' />
-      <SettingsList>
-        <SettingCheckbox checked={flashInstalled ? this.props.braveryDefaults.get('flash') : false} dataL10nId='enableFlash' onChange={this.onToggleFlash} disabled={!flashInstalled} />
-        <div className='subtext flashText'>
-          {
-            isDarwin || isWindows
-              ? <div>
-                <span className='fa fa-info-circle flashInfoIcon' />
-                <span data-l10n-id='enableFlashSubtext' />&nbsp;
-                <span className='linkText' onClick={aboutActions.newFrame.bind(null, {
-                  location: appConfig.flash.installUrl
-                }, true)} title={appConfig.flash.installUrl}>{'Adobe'}</span>.
-              </div>
-              : <div>
-                <span className='fa fa-info-circle flashInfoIcon' />
-                <span data-l10n-id='enableFlashSubtextLinux' />
-              </div>
-          }
-          <div>
-            <span className='fa fa-info-circle flashInfoIcon' />
-            <span data-l10n-id='flashTroubleshooting' />&nbsp;
-            <span className='linkText' onClick={aboutActions.newFrame.bind(null, {
-              location: 'https://github.com/brave/browser-laptop/wiki/Flash-Support-Deprecation-Proposal#troubleshooting-flash-issues'
-            }, true)} title='https://github.com/brave/browser-laptop/wiki/Flash-Support-Deprecation-Proposal#troubleshooting-flash-issues'>{'wiki'}</span>.
-          </div>
-        </div>
-      </SettingsList>
-      { !isLinux
-      ? <div>
-        <div className='sectionTitle' data-l10n-id='widevineSection' />
-        <SettingsList>
-          <WidevineInfo newFrameAction={aboutActions.newFrame} />
-          <SettingCheckbox checked={this.props.braveryDefaults.get('widevine')} dataL10nId='enableWidevine' onChange={this.onToggleWidevine} />
-        </SettingsList>
-      </div>
-      : null
-      }
       <SitePermissionsPage siteSettings={this.props.siteSettings} names={permissionNames} />
+      <div data-l10n-id='requiresRestart' className='requiresRestart' />
     </div>
   }
 }
@@ -1200,99 +874,7 @@ class AdvancedTab extends ImmutableComponent {
           }, true)} />
         <div data-l10n-id='moreExtensionsComingSoon' className='moreExtensionsComingSoon' />
       </SettingsList>
-    </div>
-  }
-}
-
-class PreferenceNavigationButton extends ImmutableComponent {
-  render () {
-    return <div className={cx({
-      selected: this.props.selected,
-      [this.props.className]: !!this.props.className
-    })}>
-      <div onClick={this.props.onClick}
-        className={cx({
-          topBarButton: true,
-          fa: true,
-          [this.props.icon]: true
-        })}>
-        <i className={this.props.icon.replace('fa-', 'i-')} />
-        <div className='tabMarkerText'
-          data-l10n-id={this.props.dataL10nId} />
-      </div>
-      {
-        this.props.selected
-        ? <div className='tabMarkerContainer'>
-          <div className='tabMarker' />
-        </div>
-        : null
-      }
-    </div>
-  }
-}
-
-class HelpfulHints extends ImmutableComponent {
-  render () {
-    return <div className='helpfulHints'>
-      <span className='hintsTitleContainer'>
-        <span data-l10n-id='hintsTitle' />
-        <span className='hintsRefresh fa fa-refresh'
-          onClick={this.props.refreshHint} />
-      </span>
-      <div data-l10n-id={`hint${this.props.hintNumber}`} />
-      <div className='helpfulHintsBottom'>
-        <a target='_blank' href='https://community.brave.com/' data-l10n-id='submitFeedback' />
-      </div>
-    </div>
-  }
-}
-
-class PreferenceNavigation extends ImmutableComponent {
-  render () {
-    return <div className='prefAside'>
-      <div />
-      <PreferenceNavigationButton icon='fa-list-alt'
-        dataL10nId='general'
-        onClick={this.props.changeTab.bind(null, preferenceTabs.GENERAL)}
-        selected={this.props.preferenceTab === preferenceTabs.GENERAL}
-      />
-      <PreferenceNavigationButton icon='fa-search'
-        dataL10nId='search'
-        onClick={this.props.changeTab.bind(null, preferenceTabs.SEARCH)}
-        selected={this.props.preferenceTab === preferenceTabs.SEARCH}
-      />
-      <PreferenceNavigationButton icon='fa-bookmark-o'
-        dataL10nId='tabs'
-        onClick={this.props.changeTab.bind(null, preferenceTabs.TABS)}
-        selected={this.props.preferenceTab === preferenceTabs.TABS}
-      />
-      <PreferenceNavigationButton icon='fa-lock'
-        dataL10nId='security'
-        onClick={this.props.changeTab.bind(null, preferenceTabs.SECURITY)}
-        selected={this.props.preferenceTab === preferenceTabs.SECURITY}
-      />
-      <PreferenceNavigationButton icon='fa-user'
-        dataL10nId='shields'
-        onClick={this.props.changeTab.bind(null, preferenceTabs.SHIELDS)}
-        selected={this.props.preferenceTab === preferenceTabs.SHIELDS}
-      />
-      <PreferenceNavigationButton icon='fa-bitcoin'
-        dataL10nId='payments'
-        onClick={this.props.changeTab.bind(null, preferenceTabs.PAYMENTS)}
-        selected={this.props.preferenceTab === preferenceTabs.PAYMENTS}
-      />
-      <PreferenceNavigationButton icon='fa-refresh'
-        className='notImplemented'
-        dataL10nId='sync'
-        onClick={this.props.changeTab.bind(null, preferenceTabs.SYNC)}
-        selected={this.props.preferenceTab === preferenceTabs.SYNC}
-      />
-      <PreferenceNavigationButton icon='fa-server'
-        dataL10nId='advanced'
-        onClick={this.props.changeTab.bind(null, preferenceTabs.ADVANCED)}
-        selected={this.props.preferenceTab === preferenceTabs.ADVANCED}
-      />
-      <HelpfulHints hintNumber={this.props.hintNumber} refreshHint={this.props.refreshHint} />
+      <div data-l10n-id='requiresRestart' className='requiresRestart' />
     </div>
   }
 }
@@ -1308,6 +890,13 @@ class AboutPreferences extends React.Component {
       ledgerBackupOverlayVisible: false,
       ledgerRecoveryOverlayVisible: false,
       addFundsOverlayVisible: false,
+      syncStartOverlayVisible: false,
+      syncAddOverlayVisible: false,
+      syncNewDeviceOverlayVisible: false,
+      syncQRVisible: false,
+      syncPassphraseVisible: false,
+      syncResetOverlayVisible: false,
+      syncRestoreEnabled: false,
       preferenceTab: this.tabFromCurrentHash,
       hintNumber: this.getNextHintNumber(),
       languageCodes: Immutable.Map(),
@@ -1316,6 +905,7 @@ class AboutPreferences extends React.Component {
       siteSettings: Immutable.Map(),
       braveryDefaults: Immutable.Map(),
       ledgerData: Immutable.Map(),
+      syncData: Immutable.Map(),
       firstRecoveryKey: '',
       secondRecoveryKey: ''
     }
@@ -1325,6 +915,9 @@ class AboutPreferences extends React.Component {
     })
     ipc.on(messages.LEDGER_UPDATED, (e, ledgerData) => {
       this.setState({ ledgerData: Immutable.fromJS(ledgerData) })
+    })
+    ipc.on(messages.SYNC_UPDATED, (e, syncData) => {
+      this.setState({ syncData: Immutable.fromJS(syncData) })
     })
     ipc.on(messages.SITE_SETTINGS_UPDATED, (e, siteSettings) => {
       this.setState({ siteSettings: Immutable.fromJS(siteSettings || {}) })
@@ -1338,6 +931,7 @@ class AboutPreferences extends React.Component {
     ipc.send(messages.REQUEST_LANGUAGE)
     this.onChangeSetting = this.onChangeSetting.bind(this)
     this.updateTabFromAnchor = this.updateTabFromAnchor.bind(this)
+    this.enableSyncRestore = this.enableSyncRestore.bind(this)
   }
 
   hideAdvancedOverlays () {
@@ -1347,6 +941,12 @@ class AboutPreferences extends React.Component {
       ledgerRecoveryOverlayVisible: false
     })
     this.forceUpdate()
+  }
+
+  enableSyncRestore (enabled) {
+    this.setState({
+      syncRestoreEnabled: enabled
+    })
   }
 
   componentDidMount () {
@@ -1444,6 +1044,7 @@ class AboutPreferences extends React.Component {
     const braveryDefaults = this.state.braveryDefaults
     const languageCodes = this.state.languageCodes
     const ledgerData = this.state.ledgerData
+    const syncData = this.state.syncData
     switch (this.state.preferenceTab) {
       case preferenceTabs.GENERAL:
         tab = <GeneralTab settings={settings} onChangeSetting={this.onChangeSetting} languageCodes={languageCodes} />
@@ -1454,8 +1055,45 @@ class AboutPreferences extends React.Component {
       case preferenceTabs.TABS:
         tab = <TabsTab settings={settings} onChangeSetting={this.onChangeSetting} />
         break
+      case preferenceTabs.PLUGINS:
+        tab = <PluginsTab settings={settings} siteSettings={siteSettings} braveryDefaults={braveryDefaults} onChangeSetting={this.onChangeSetting} />
+        break
       case preferenceTabs.SYNC:
-        tab = <SyncTab settings={settings} onChangeSetting={this.onChangeSetting} />
+        tab = <SyncTab
+          settings={settings}
+          onChangeSetting={this.onChangeSetting}
+          enableSyncRestore={this.enableSyncRestore}
+          syncRestoreEnabled={this.state.syncRestoreEnabled}
+          syncData={syncData}
+          showOverlay={this.setOverlayVisible.bind(this, true)}
+          hideOverlay={this.setOverlayVisible.bind(this, false)}
+          syncStartOverlayVisible={this.state.syncStartOverlayVisible}
+          syncAddOverlayVisible={this.state.syncAddOverlayVisible}
+          syncNewDeviceOverlayVisible={this.state.syncNewDeviceOverlayVisible}
+          syncQRVisible={this.state.syncQRVisible}
+          showQR={() => {
+            this.setState({
+              syncQRVisible: true
+            })
+          }}
+          hideQR={() => {
+            this.setState({
+              syncQRVisible: false
+            })
+          }}
+          syncPassphraseVisible={this.state.syncPassphraseVisible}
+          showPassphrase={() => {
+            this.setState({
+              syncPassphraseVisible: true
+            })
+          }}
+          hidePassphrase={() => {
+            this.setState({
+              syncPassphraseVisible: false
+            })
+          }}
+          syncResetOverlayVisible={this.state.syncResetOverlayVisible}
+        />
         break
       case preferenceTabs.SHIELDS:
         tab = <ShieldsTab settings={settings} siteSettings={siteSettings} braveryDefaults={braveryDefaults} onChangeSetting={this.onChangeSetting} />
@@ -1498,17 +1136,7 @@ class AboutPreferences extends React.Component {
   }
 }
 
-function formattedDateFromTimestamp (timestamp) {
-  return moment(new Date(timestamp)).format('YYYY-MM-DD')
-}
-
 module.exports = {
   AboutPreferences: <AboutPreferences />,
-  BitcoinDashboard,
-  LedgerTable,
-  SettingsList,
-  SettingItem,
-  SettingCheckbox,
-  PaymentHistory,
-  changeSetting
+  BitcoinDashboard
 }

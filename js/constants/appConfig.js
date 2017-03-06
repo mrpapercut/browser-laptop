@@ -9,6 +9,10 @@ const winUpdateHost = process.env.BRAVE_WIN_UPDATE_HOST || 'https://brave-downlo
 const crashURL = process.env.BRAVE_CRASH_URL || 'https://brave-laptop-updates.herokuapp.com/1/crashes'
 const adHost = process.env.AD_HOST || 'https://oip.brave.com'
 
+const buildConfig = require('./buildConfig')
+const isProduction = buildConfig.nodeEnv === 'production'
+const {fullscreenOption} = require('../../app/common/constants/settingsEnums')
+
 module.exports = {
   name: 'Brave',
   contactUrl: 'mailto:support+laptop@brave.com',
@@ -98,6 +102,13 @@ module.exports = {
     baseUrl: `${updateHost}/1/releases`,
     winBaseUrl: `${winUpdateHost}/multi-channel/releases/CHANNEL/`
   },
+  sync: {
+    apiVersion: '0',
+    serverUrl: isProduction ? 'https://sync.brave.com' : 'https://sync-staging.brave.com',
+    debug: !isProduction,
+    s3Url: isProduction ? 'https://brave-sync.s3.dualstack.us-west-2.amazonaws.com' : 'https://brave-sync-staging.s3.dualstack.us-west-2.amazonaws.com',
+    fetchInterval: 1000 * 60
+  },
   urlSuggestions: {
     ageDecayConstant: 50
   },
@@ -118,6 +129,7 @@ module.exports = {
     'tabs.tabs-per-page': 10,
     'tabs.close-action': 'parent',
     'tabs.show-tab-previews': true,
+    'tabs.show-dashboard-images': true,
     'privacy.history-suggestions': true,
     'privacy.bookmark-suggestions': true,
     'privacy.opened-tab-suggestions': true,
@@ -143,7 +155,15 @@ module.exports = {
     'security.passwords.dashlane-enabled': false,
     'security.passwords.last-pass-enabled': false,
     'security.passwords.enpass-enabled': false,
+    'security.passwords.bitwarden-enabled': false,
+    'security.fullscreen.content': fullscreenOption.ALWAYS_ASK,
     'security.flash.installed': false,
+    // sync
+    'sync.enabled': false,
+    'sync.device-name': 'browser-laptop',
+    'sync.type.bookmark': true,
+    'sync.type.history': false,
+    'sync.type.siteSetting': true,
     'general.downloads.default-save-path': null,
     'general.disable-title-mode': process.platform === 'linux',
     'advanced.hardware-acceleration-enabled': true,
@@ -155,7 +175,7 @@ module.exports = {
     'advanced.send-usage-statistics': false,
     'advanced.hide-excluded-sites': false,
     'advanced.minimum-visit-time': 8,
-    'advanced.minimum-visits': 5,
+    'advanced.minimum-visits': 1,
     'advanced.minimum-percentage': false,
     'advanced.auto-suggest-sites': true,
     'shutdown.clear-history': false,

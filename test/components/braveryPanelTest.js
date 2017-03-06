@@ -2,7 +2,7 @@
 
 const Brave = require('../lib/brave')
 const messages = require('../../js/constants/messages')
-const {urlInput, braveMenu, braveMenuDisabled, adsBlockedStat, adsBlockedControl, showAdsOption, blockAdsOption, braveryPanel, httpsEverywhereStat, noScriptStat, noScriptSwitch, fpSwitch, fpStat, noScriptNavButton} = require('../lib/selectors')
+const {urlInput, braveMenu, braveMenuDisabled, adsBlockedStat, adsBlockedControl, showAdsOption, blockAdsOption, braveryPanel, httpsEverywhereStat, noScriptStat, noScriptSwitch, fpSwitch, fpStat, noScriptNavButton, customFiltersInput} = require('../lib/selectors')
 const {getTargetAboutUrl} = require('../../js/lib/appUrlUtil')
 
 describe('Bravery Panel', function () {
@@ -204,9 +204,8 @@ describe('Bravery Panel', function () {
         .waitForDataFile('adblock')
         .tabByIndex(0)
         .loadUrl(aboutAdblockURL)
-        .url(aboutAdblockURL)
-        .waitForVisible('.customFiltersInput')
-        .setValue('.customFiltersInput', 'testblock.brave.com')
+        .waitForVisible(customFiltersInput)
+        .setValue(customFiltersInput, 'testblock.brave.com')
         .windowByUrl(Brave.browserWindowUrl)
         .waitUntil(function () {
           return this.getAppState().then((val) => {
@@ -239,8 +238,8 @@ describe('Bravery Panel', function () {
         .tabByIndex(0)
         .loadUrl(aboutAdblockURL)
         .url(aboutAdblockURL)
-        .waitForVisible('.customFiltersInput')
-        .setValue('.customFiltersInput', 'testblock.brave.com')
+        .waitForVisible(customFiltersInput)
+        .setValue(customFiltersInput, 'testblock.brave.com')
         .windowByUrl(Brave.browserWindowUrl)
         .waitUntil(function () {
           return this.getAppState().then((val) => {
@@ -268,6 +267,24 @@ describe('Bravery Panel', function () {
         .click(blockAdsOption)
         .waitForTextValue(adsBlockedStat, '2')
     })
+    it('blocks websocket tracking', function * () {
+      const url = Brave.server.url('websockets.html')
+      yield this.app.client
+        .waitForDataFile('adblock')
+        .tabByIndex(0)
+        .loadUrl(url)
+        .waitForTextValue('#result', 'success')
+        .waitForTextValue('#error', 'error')
+        .openBraveMenu(braveMenu, braveryPanel)
+        .waitForTextValue(adsBlockedStat, '1')
+        .click(adsBlockedStat)
+        .waitUntil(function () {
+          return this.getText('.braveryPanelBody li')
+            .then((body) => {
+              return body[0] === 'ws://ag.innovid.com/dv/sync?tid=2'
+            })
+        })
+    })
     // TODO(bridiver) using slashdot won't provide reliable results so we should
     // create our own iframe page with urls we expect to be blocked
     it('detects blocked elements in iframe in private tab', function * () {
@@ -275,7 +292,6 @@ describe('Bravery Panel', function () {
       yield this.app.client
         .ipcSend(messages.SHORTCUT_NEW_FRAME, url, { isPrivate: true })
         .waitForTabCount(2)
-        .waitForUrl(url)
         .windowByUrl(Brave.browserWindowUrl)
         .openBraveMenu(braveMenu, braveryPanel)
         .waitUntil(function () {
@@ -289,7 +305,6 @@ describe('Bravery Panel', function () {
         .keys(Brave.keys.ESCAPE)
         .ipcSend(messages.SHORTCUT_NEW_FRAME, url)
         .waitForTabCount(3)
-        .waitForUrl(url)
         .openBraveMenu(braveMenu, braveryPanel)
         .waitUntil(function () {
           return this.getText(adsBlockedStat)

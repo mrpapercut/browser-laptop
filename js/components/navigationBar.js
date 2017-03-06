@@ -15,10 +15,11 @@ const siteTags = require('../constants/siteTags')
 const messages = require('../constants/messages')
 const settings = require('../constants/settings')
 const ipc = require('electron').ipcRenderer
-const {isSourceAboutUrl} = require('../lib/appUrlUtil')
+const {isSourceAboutUrl, getBaseUrl} = require('../lib/appUrlUtil')
 const AddEditBookmarkHanger = require('../../app/renderer/components/addEditBookmarkHanger')
 const siteUtil = require('../state/siteUtil')
 const eventUtil = require('../lib/eventUtil')
+const UrlUtil = require('../lib/urlutil')
 const getSetting = require('../settings').getSetting
 const windowStore = require('../stores/windowStore')
 const contextMenus = require('../contextMenus')
@@ -50,8 +51,10 @@ class NavigationBar extends ImmutableComponent {
     const key = siteUtil.getSiteKey(siteDetail)
 
     if (key !== null) {
-      siteDetail = siteDetail.set('parentFolderId', this.props.sites.getIn([key]).get('parentFolderId'))
+      siteDetail = siteDetail.set('parentFolderId', this.props.sites.getIn([key, 'parentFolderId']))
+      siteDetail = siteDetail.set('customTitle', this.props.sites.getIn([key, 'customTitle']))
     }
+    siteDetail = siteDetail.set('location', UrlUtil.getLocationIfPDF(siteDetail.get('location')))
     windowActions.setBookmarkDetail(siteDetail, siteDetail, null, editing, true)
   }
 
@@ -75,6 +78,7 @@ class NavigationBar extends ImmutableComponent {
   }
 
   onStop () {
+    ipc.emit(messages.SHORTCUT_ACTIVE_FRAME_STOP)
     if (this.props.navbar.getIn(['urlbar', 'focused'])) {
       windowActions.setUrlBarActive(false)
       const shouldRenderSuggestions = this.props.navbar.getIn(['urlbar', 'suggestions', 'shouldRender']) === true
@@ -92,20 +96,47 @@ class NavigationBar extends ImmutableComponent {
     return this.props.activeFrameKey !== undefined &&
       siteUtil.isSiteBookmarked(this.props.sites, Immutable.fromJS({
         location: this.props.location,
-        partitionNumber: this.props.partitionNumber,
-        title: this.props.title
+        partitionNumber: this.props.partitionNumber
       }))
   }
 
   get titleMode () {
-    return this.props.mouseInTitlebar === false &&
-      !this.props.bookmarkDetail &&
-      this.props.title &&
-      !['about:blank', 'about:newtab'].includes(this.props.location) &&
-      !this.loading &&
-      !this.props.navbar.getIn(['urlbar', 'focused']) &&
-      !this.props.navbar.getIn(['urlbar', 'active']) &&
-      getSetting(settings.DISABLE_TITLE_MODE) === false
+    return this.props.activeTabShowingMessageBox ||
+      (
+        this.props.mouseInTitlebar === false &&
+        !this.props.bookmarkDetail &&
+        this.props.title &&
+        !['about:blank', 'about:newtab'].includes(this.props.location) &&
+        !this.loading &&
+        !this.props.navbar.getIn(['urlbar', 'focused']) &&
+        !this.props.navbar.getIn(['urlbar', 'active']) &&
+        getSetting(settings.DISABLE_TITLE_MODE) === false
+      )
+  }
+
+  get locationId () {
+    return getBaseUrl(this.props.location)
+  }
+
+  get publisherId () {
+    return this.props.locationInfo.getIn([this.locationId, 'publisher']) || ''
+  }
+
+  get visiblePublisher () {
+    // No publisher is visible if ledger is disabled
+    if (!getSetting(settings.PAYMENTS_ENABLED)) {
+      return false
+    }
+    const hostPattern = UrlUtil.getHostPattern(this.publisherId)
+    const hostSettings = this.props.siteSettings.get(hostPattern)
+    const ledgerPaymentsShown = hostSettings && hostSettings.get('ledgerPaymentsShown')
+    return typeof ledgerPaymentsShown === 'boolean'
+      ? ledgerPaymentsShown
+      : true
+  }
+
+  get isPublisherButtonEnabled () {
+    return UrlUtil.isHttpOrHttps(this.props.location) && this.visiblePublisher
   }
 
   componentDidMount () {
@@ -209,7 +240,8 @@ class NavigationBar extends ImmutableComponent {
         urlbar={this.props.navbar.get('urlbar')}
         onStop={this.onStop}
         menubarVisible={this.props.menubarVisible}
-        noBorderRadius={this.shouldShowAddPublisherButton}
+        noBorderRadius={this.isPublisherButtonEnabled}
+        activeTabShowingMessageBox={this.props.activeTabShowingMessageBox}
         />
       {
         isSourceAboutUrl(this.props.location)
@@ -219,8 +251,9 @@ class NavigationBar extends ImmutableComponent {
         : <div className='endButtons'>
           {
             <PublisherToggle
-              url={this.props.location}
-              hostSettings={this.props.siteSettings}
+              location={this.props.location}
+              locationInfo={this.props.locationInfo}
+              siteSettings={this.props.siteSettings}
               synopsis={this.props.synopsis}
             />
           }

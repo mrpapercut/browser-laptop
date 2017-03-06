@@ -1,6 +1,7 @@
-/* global describe, it, before */
+/* global describe, it, before, after */
 const tabState = require('../../../../../app/common/state/tabState')
 const Immutable = require('immutable')
+const sinon = require('sinon')
 const assert = require('chai').assert
 const AssertionError = require('assert').AssertionError
 
@@ -172,7 +173,7 @@ const shouldValidateAction = function (cb) {
   })
 }
 
-describe('tabState', function () {
+describe('tabState unit tests', function () {
   describe('getTabIndexByTabId', function () {
     before(function () {
       this.appState = defaultAppState.set('tabs', Immutable.fromJS([
@@ -465,9 +466,36 @@ describe('tabState', function () {
     })
   })
 
+  describe('removeTabField', function () {
+    it('removes the field specified', function () {
+      const tab = Immutable.fromJS({
+        windowId: 1,
+        frameKey: 1,
+        tabId: 2,
+        loginRequiredDetail: {
+          request: { url: 'someurl' },
+          authInfo: { authInfoProp: 'value' }
+        }
+      })
+      const tabs = Immutable.fromJS([tab])
+      const tabsWithoutField = Immutable.fromJS([tab.delete('loginRequiredDetail')])
+      const newAppState = tabState.removeTabField(defaultAppState.set('tabs', tabs), 'loginRequiredDetail')
+      const expectedAppState = defaultAppState.set('tabs', tabsWithoutField)
+      assert.deepEqual(newAppState, expectedAppState)
+    })
+    it('returns the state (unchanged) if tabs is falsey', function () {
+      const emptyTabState = defaultAppState.delete('tabs')
+      const newAppState = tabState.removeTabField(emptyTabState, 'loginRequiredDetail')
+      assert.equal(newAppState, emptyTabState)
+    })
+  })
+
   describe('getPersistentState', function () {
+    let appState
+    let removeTabFieldSpy
+
     before(function () {
-      this.tabs = Immutable.fromJS([{
+      const tabs = Immutable.fromJS([{
         windowId: 1,
         frameKey: 1,
         tabId: 2,
@@ -476,7 +504,17 @@ describe('tabState', function () {
           authInfo: { authInfoProp: 'value' }
         }
       }])
-      this.tabs = tabState.getPersistentState(this.tabs)
+      appState = defaultAppState.set('tabs', tabs)
+      removeTabFieldSpy = sinon.spy(tabState, 'removeTabField')
+      tabState.getPersistentState(appState)
+    })
+
+    after(function () {
+      removeTabFieldSpy.restore()
+    })
+
+    it('removes message box data', function () {
+      assert.equal(removeTabFieldSpy.withArgs(appState, 'messageBoxDetail').calledOnce, true)
     })
   })
 

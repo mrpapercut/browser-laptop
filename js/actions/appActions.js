@@ -116,14 +116,16 @@ const appActions = {
    * @param {string} originalSiteDetail - If specified, the original site detail to edit / overwrite.
    * @param {boolean} destinationIsParent - Whether or not the destinationDetail should be considered the new parent.
    *   The details of the old entries will be modified if this is set, otherwise only the tag will be added.
+   * @param {boolean} skipSync - Set true if a site isn't eligible for Sync (e.g. if addSite was triggered by Sync)
    */
-  addSite: function (siteDetail, tag, originalSiteDetail, destinationDetail) {
+  addSite: function (siteDetail, tag, originalSiteDetail, destinationDetail, skipSync) {
     AppDispatcher.dispatch({
       actionType: appConstants.APP_ADD_SITE,
       siteDetail,
       tag,
       originalSiteDetail,
-      destinationDetail
+      destinationDetail,
+      skipSync
     })
   },
 
@@ -140,12 +142,14 @@ const appActions = {
    * Removes a site from the site list
    * @param {Object} siteDetail - Properties of the site in question
    * @param {string} tag - A tag to associate with the site. e.g. bookmarks.
+   * @param {boolean} skipSync - Set true if a site isn't eligible for Sync (e.g. if this removal was triggered by Sync)
    */
-  removeSite: function (siteDetail, tag) {
+  removeSite: function (siteDetail, tag, skipSync) {
     AppDispatcher.dispatch({
       actionType: appConstants.APP_REMOVE_SITE,
       siteDetail,
-      tag
+      tag,
+      skipSync
     })
   },
 
@@ -366,14 +370,16 @@ const appActions = {
    * @param {string|number} value - The value to update to
    * @param {boolean} temp - Whether to change temporary or persistent
    *   settings. defaults to false (persistent).
+   * @param {boolean} skipSync - Set true if a site isn't eligible for Sync (e.g. if addSite was triggered by Sync)
    */
-  changeSiteSetting: function (hostPattern, key, value, temp) {
+  changeSiteSetting: function (hostPattern, key, value, temp, skipSync) {
     AppDispatcher.dispatch({
       actionType: appConstants.APP_CHANGE_SITE_SETTING,
       hostPattern,
       key,
       value,
-      temporary: temp || false
+      temporary: temp || false,
+      skipSync
     })
   },
 
@@ -383,13 +389,15 @@ const appActions = {
    * @param {string} key - The config key to update
    * @param {boolean} temp - Whether to change temporary or persistent
    *   settings. defaults to false (persistent).
+   * @param {boolean} skipSync - Set true if a site isn't eligible for Sync (e.g. if addSite was triggered by Sync)
    */
-  removeSiteSetting: function (hostPattern, key, temp) {
+  removeSiteSetting: function (hostPattern, key, temp, skipSync) {
     AppDispatcher.dispatch({
       actionType: appConstants.APP_REMOVE_SITE_SETTING,
       hostPattern,
       key,
-      temporary: temp || false
+      temporary: temp || false,
+      skipSync
     })
   },
 
@@ -405,6 +413,17 @@ const appActions = {
   },
 
   /**
+   * Updates location information for the URL bar
+   * @param {object} locationInfo - the current location synopsis
+   */
+  updateLocationInfo: function (locationInfo) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_UPDATE_LOCATION_INFO,
+      locationInfo
+    })
+  },
+
+  /**
    * Updates publisher information for the payments pane
    * @param {object} publisherInfo - the current publisher synopsis
    */
@@ -416,34 +435,34 @@ const appActions = {
   },
 
   /**
-   * Shows a message box in the notification bar
+   * Shows a message in the notification bar
    * @param {{message: string, buttons: Array.<string>, frameOrigin: string, options: Object}} detail
    */
-  showMessageBox: function (detail) {
+  showNotification: function (detail) {
     AppDispatcher.dispatch({
-      actionType: appConstants.APP_SHOW_MESSAGE_BOX,
+      actionType: appConstants.APP_SHOW_NOTIFICATION,
       detail
     })
   },
 
   /**
-   * Hides a message box in the notification bar
+   * Hides a message in the notification bar
    * @param {string} message
    */
-  hideMessageBox: function (message) {
+  hideNotification: function (message) {
     AppDispatcher.dispatch({
-      actionType: appConstants.APP_HIDE_MESSAGE_BOX,
+      actionType: appConstants.APP_HIDE_NOTIFICATION,
       message
     })
   },
 
   /**
-   * Clears all message boxes for a given origin.
+   * Clears all notifications for a given origin.
    * @param {string} origin
    */
-  clearMessageBoxes: function (origin) {
+  clearNotifications: function (origin) {
     AppDispatcher.dispatch({
-      actionType: appConstants.APP_CLEAR_MESSAGE_BOXES,
+      actionType: appConstants.APP_CLEAR_NOTIFICATIONS,
       origin
     })
   },
@@ -768,6 +787,24 @@ const appActions = {
   },
 
   /**
+   * Shows delete confirmation bar in download item panel
+   */
+  showDownloadDeleteConfirmation: function () {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_SHOW_DOWNLOAD_DELETE_CONFIRMATION
+    })
+  },
+
+  /**
+   * Hides delete confirmation bar in download item panel
+   */
+  hideDownloadDeleteConfirmation: function () {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_HIDE_DOWNLOAD_DELETE_CONFIRMATION
+    })
+  },
+
+  /**
    * Dispatches a message when text is updated to the clipboard
    * @param {string} text - clipboard text which is copied
    */
@@ -775,6 +812,17 @@ const appActions = {
     AppDispatcher.dispatch({
       actionType: appConstants.APP_CLIPBOARD_TEXT_UPDATED,
       text
+    })
+  },
+
+  /**
+   * Dispatches a message to toogle the dev tools on/off for the specified tabId
+   * @param {number} tabId - The tabId
+   */
+  toggleDevTools: function (tabId) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_TAB_TOGGLE_DEV_TOOLS,
+      tabId
     })
   },
 
@@ -789,8 +837,140 @@ const appActions = {
       tabId,
       options
     })
-  }
+  },
 
+  /**
+   * Dispatches a message when noscript exceptions are added for an origin
+   * @param {string} hostPattern
+   * @param {Object.<string, (boolean|number)>} origins
+   */
+  noScriptExceptionsAdded: function (hostPattern, origins) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_ADD_NOSCRIPT_EXCEPTIONS,
+      hostPattern,
+      origins
+    })
+  },
+
+  /**
+   * Dispatches a message to set objectId for a syncable object.
+   * @param {Array.<number>} objectId
+   * @param {Array.<string>} objectPath
+   */
+  setObjectId: function (objectId, objectPath) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_SET_OBJECT_ID,
+      objectId,
+      objectPath
+    })
+  },
+
+  /**
+   * Dispatches a message when sync init data needs to be saved
+   * @param {Array.<number>|null} seed
+   * @param {Array.<number>|null} deviceId
+   * @param {number|null} lastFetchTimestamp
+   * @param {string=} seedQr
+   */
+  saveSyncInitData: function (seed, deviceId, lastFetchTimestamp, seedQr) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_SAVE_SYNC_INIT_DATA,
+      seed,
+      deviceId,
+      lastFetchTimestamp,
+      seedQr
+    })
+  },
+
+  /**
+   * Dispatches a message to apply a batch of site records from Brave Sync
+   * TODO: Refactor this to merge it into addSite/removeSite
+   * @param {Array.<Object>} records
+   */
+  applySiteRecords: function (records) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_APPLY_SITE_RECORDS,
+      records
+    })
+  },
+
+  /**
+   * Dispatches a message to delete sync data.
+   */
+  resetSyncData: function () {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_RESET_SYNC_DATA
+    })
+  },
+
+  /*
+   * Will pop up an alert/confirm/prompt for a given tab. Window is still usable.
+   * @param {number} tabId - The tabId
+   * @param {Object} detail - Object containing: title, message, buttons to show
+   */
+  tabMessageBoxShown: function (tabId, detail) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_TAB_MESSAGE_BOX_SHOWN,
+      tabId,
+      detail
+    })
+  },
+
+  /**
+   * Close a tab's open alert/confirm/etc (triggered by clicking OK/cancel).
+   * @param {number} tabId - The tabId
+   * @param {Object} detail - Object containing: suppressCheckbox (boolean)
+   */
+  tabMessageBoxDismissed: function (tabId, detail) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_TAB_MESSAGE_BOX_DISMISSED,
+      tabId,
+      detail
+    })
+  },
+
+  /**
+   * Update the detail object for the open alert/confirm/prompt (triggers re-render)
+   * @param {number} tabId - The tabId
+   * @param {Object} detail - Replacement object
+   */
+  tabMessageBoxUpdated: function (tabId, detail) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_TAB_MESSAGE_BOX_UPDATED,
+      tabId,
+      detail
+    })
+  },
+
+  /**
+   * Action triggered by registering navigation handler
+   * @param partition {string} session partition
+   * @param protocol {string} navigator protocol
+   * @param location {string} location where handler was triggered
+   */
+  navigatorHandlerRegistered: function (partition, protocol, location) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_NAVIGATOR_HANDLER_REGISTERED,
+      partition,
+      protocol,
+      location
+    })
+  },
+
+  /**
+   * Action triggered by un-registering navigation handler
+   * @param partition {string} session partition
+   * @param protocol {string} navigator protocol
+   * @param location {string} location where handler was triggered
+   */
+  navigatorHandlerUnregistered: function (partition, protocol, location) {
+    AppDispatcher.dispatch({
+      actionType: appConstants.APP_NAVIGATOR_HANDLER_UNREGISTERED,
+      partition,
+      protocol,
+      location
+    })
+  }
 }
 
 module.exports = appActions

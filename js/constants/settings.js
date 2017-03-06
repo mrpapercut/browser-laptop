@@ -25,6 +25,7 @@ const settings = {
   PAINT_TABS: 'tabs.paint-tabs',
   TABS_PER_PAGE: 'tabs.tabs-per-page',
   SHOW_TAB_PREVIEWS: 'tabs.show-tab-previews',
+  SHOW_DASHBOARD_IMAGES: 'tabs.show-dashboard-images',
   // Privacy Tab
   HISTORY_SUGGESTIONS: 'privacy.history-suggestions',
   BOOKMARK_SUGGESTIONS: 'privacy.bookmark-suggestions',
@@ -42,6 +43,7 @@ const settings = {
   SHUTDOWN_CLEAR_AUTOFILL_DATA: 'shutdown.clear-autofill-data',
   SHUTDOWN_CLEAR_SITE_SETTINGS: 'shutdown.clear-site-settings',
   FLASH_INSTALLED: 'security.flash.installed',
+  FULLSCREEN_CONTENT: 'security.fullscreen.content',
   // Autofill
   AUTOFILL_ENABLED: 'privacy.autofill-enabled',
   // Payments Tab
@@ -65,7 +67,12 @@ const settings = {
   MINIMUM_VISITS: 'advanced.minimum-visits',
   MINIMUM_PERCENTAGE: 'advanced.minimum-percentage',
   AUTO_SUGGEST_SITES: 'advanced.auto-suggest-sites',
-
+  // Sync settings
+  SYNC_ENABLED: 'sync.enabled',
+  SYNC_DEVICE_NAME: 'sync.device-name',
+  SYNC_TYPE_BOOKMARK: 'sync.type.bookmark',
+  SYNC_TYPE_HISTORY: 'sync.type.history',
+  SYNC_TYPE_SITE_SETTING: 'sync.type.siteSetting',
   // DEPRECATED settings
   // ########################
   // these constants should not appear outside of this file, ../settings.js, and our tests
@@ -77,6 +84,7 @@ const settings = {
   DASHLANE_ENABLED: 'security.passwords.dashlane-enabled',
   LAST_PASS_ENABLED: 'security.passwords.last-pass-enabled',
   ENPASS_ENABLED: 'security.passwords.enpass-enabled',
+  BITWARDEN_ENABLED: 'security.passwords.bitwarden-enabled',
   // > phased out with 0.12.6
   SHOW_BOOKMARKS_TOOLBAR_FAVICON: 'bookmarks.toolbar.showFavicon',
   SHOW_BOOKMARKS_TOOLBAR_ONLY_FAVICON: 'bookmarks.toolbar.showOnlyFavicon',

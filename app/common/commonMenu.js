@@ -14,13 +14,10 @@ const communityURL = 'https://community.brave.com/'
 const isDarwin = process.platform === 'darwin'
 const electron = require('electron')
 
-let app
 let BrowserWindow
 if (process.type === 'browser') {
-  app = electron.app
   BrowserWindow = electron.BrowserWindow
 } else {
-  app = electron.remote.app
   BrowserWindow = electron.remote.BrowserWindow
 }
 
@@ -57,11 +54,7 @@ module.exports.quitMenuItem = () => ({
   label: locale.translation('quitApp'),
   accelerator: 'CmdOrCtrl+Q',
   click: function () {
-    if (process.type === 'browser') {
-      app.quit()
-    } else {
-      electron.ipcRenderer.send(messages.QUIT_APPLICATION)
-    }
+    appActions.shuttingDown()
   }
 })
 
@@ -244,6 +237,19 @@ module.exports.importBrowserDataMenuItem = () => {
         process.emit(messages.IMPORT_BROWSER_DATA_NOW)
       } else {
         electron.ipcRenderer.send(messages.IMPORT_BROWSER_DATA_NOW)
+      }
+    }
+  }
+}
+
+module.exports.exportBookmarksMenuItem = () => {
+  return {
+    label: locale.translation('exportBookmarks'),
+    click: function (item, focusedWindow) {
+      if (process.type === 'browser') {
+        process.emit(messages.EXPORT_BOOKMARKS)
+      } else {
+        electron.ipcRenderer.send(messages.EXPORT_BOOKMARKS)
       }
     }
   }

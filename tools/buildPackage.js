@@ -41,7 +41,8 @@ console.log('Writing buildConfig.js...')
 config.writeBuildConfig(
   {
     channel: env.CHANNEL,
-    BROWSER_LAPTOP_REV: require('git-rev-sync').long()
+    BROWSER_LAPTOP_REV: require('git-rev-sync').long(),
+    nodeEnv: env.NODE_ENV
   },
   'buildConfig.js'
 )
@@ -140,5 +141,6 @@ execute(cmds, env, (err) => {
     process.exit(1)
     return
   }
+  config.clearBuildConfig()
   console.log('done')
 })

@@ -54,6 +54,7 @@ const addBookmarkMenuItem = (label, siteDetail, closestDestinationDetail, isPare
       if (isParent) {
         siteDetail = siteDetail.set('parentFolderId', closestDestinationDetail && (closestDestinationDetail.get('folderId') || closestDestinationDetail.get('parentFolderId')))
       }
+      siteDetail = siteDetail.set('location', urlUtil.getLocationIfPDF(siteDetail.get('location')))
       windowActions.setBookmarkDetail(siteDetail, siteDetail, closestDestinationDetail, true)
     }
   }
@@ -474,7 +475,7 @@ function flashTemplateInit (frameProps) {
       label: locale.translation('openFlashPreferences'),
       click: () => {
         windowActions.newFrame({
-          location: 'about:preferences#security'
+          location: 'about:preferences#plugins'
         }, true)
       }
     })
@@ -720,7 +721,8 @@ function hamburgerTemplateInit (location, e) {
         CommonMenu.bookmarksManagerMenuItem(),
         CommonMenu.bookmarksToolbarMenuItem(),
         CommonMenu.separatorMenuItem,
-        CommonMenu.importBrowserDataMenuItem()
+        CommonMenu.importBrowserDataMenuItem(),
+        CommonMenu.exportBookmarksMenuItem()
       ]
     }, {
       label: locale.translation('bravery'),
@@ -1404,7 +1406,8 @@ function onShowUsernameMenu (usernames, origin, action, boundingRect,
 
 function onShowAutofillMenu (suggestions, boundingRect, frame) {
   const menuTemplate = autofillTemplateInit(suggestions, frame)
-  const downloadsBarOffset = windowStore.getState().getIn(['ui', 'downloadsToolbar', 'isVisible']) ? getDownloadsBarHeight() : 0
+  const downloadsBarOffset = windowStore.getState().getIn(['ui', 'downloadsToolbar', 'isVisible']) &&
+    appStore.state.get('downloads') && appStore.state.get('downloads').size ? getDownloadsBarHeight() : 0
   const offset = {
     x: (window.innerWidth - boundingRect.clientWidth),
     y: (window.innerHeight - boundingRect.clientHeight)

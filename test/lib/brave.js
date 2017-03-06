@@ -82,10 +82,12 @@ var exports = {
     DELETE: '\ue017',
     DOWN: '\ue015',
     UP: '\ue013',
-    PAGEDOWN: '\uE00F'
+    PAGEDOWN: '\uE00F',
+    END: '\uE010'
   },
 
   defaultTimeout: 10000,
+  defaultInterval: 100,
 
   browserWindowUrl: getBraveExtIndexHTML(),
   newTabUrl: 'chrome-extension://mnojpmjdmbbfmejpflffifhffcmidifd/about-newtab.html',
@@ -155,10 +157,19 @@ var exports = {
   },
 
   addCommands: function () {
+    const app = this.app
+    const initialized = []
+
     this.app.client.addCommand('ipcSend', function (message, ...param) {
       return this.execute(function (message, ...param) {
         return devTools('electron').remote.getCurrentWindow().webContents.send(message, ...param)
       }, message, ...param).then((response) => response.value)
+    })
+
+    this.app.client.addCommand('maximize', function () {
+      return this.execute(function () {
+        return devTools('electron').remote.getCurrentWindow().maximize()
+      }).then((response) => response.value)
     })
 
     this.app.client.addCommand('unmaximize', function () {
@@ -178,6 +189,18 @@ var exports = {
         return devTools('electron').ipcRenderer.sendSync(message, ...param)
       }, message, ...param)
     })
+
+    var windowOrig = this.app.client.window
+    Object.getPrototypeOf(this.app.client).window = function (handle) {
+      if (!initialized.includes(handle)) {
+        initialized.push(handle)
+        return windowOrig.apply(this, [handle]).call(() => {
+          return app.api.initialize().then(() => true, () => true)
+        }).then(() => windowOrig.apply(this, [handle]))
+      } else {
+        return windowOrig.apply(this, [handle])
+      }
+    }
 
     var windowHandlesOrig = this.app.client.windowHandles
     Object.getPrototypeOf(this.app.client).windowHandles = function () {
@@ -209,7 +232,10 @@ var exports = {
         .then(function (response) {
           var handles = response.value
           return promiseMapSeries(handles, (handle) => {
-            return this.window(handle).getUrl()
+            return this.window(handle).getUrl().catch((err) => {
+              console.error('Error retrieving window handle ' + handle, err)
+              return ''
+            })
           }).then((urls) => {
             var newHandles = []
             for (var i = 0; i < urls.length; i++) {
@@ -251,7 +277,7 @@ var exports = {
           logVerbose('waitForBrowserWindow() => false')
           return false
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('activateTitleMode', function () {
@@ -278,13 +304,13 @@ var exports = {
           logVerbose('tabByUrl("' + url + '") => false')
           return false
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForSelectedText', function (text) {
       return this.waitUntil(function () {
         return this.getSelectedText(text).then((value) => { return value === text })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForTextValue', function (selector, text) {
@@ -292,7 +318,7 @@ var exports = {
         .waitForVisible(selector)
         .waitUntil(function () {
           return this.getText(selector).then((value) => { return value === text })
-        })
+        }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForTabCount', function (tabCount) {
@@ -301,20 +327,19 @@ var exports = {
         return this.getTabCount().then((count) => {
           return count === tabCount
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForAddressCount', function (addressCount) {
       logVerbose('waitForAddressCount(' + addressCount + ')')
       return this.waitUntil(function () {
         return this.getAppState().then((val) => {
-          console.log(val.value && val.value.autofill)
           const ret = val.value && val.value && val.value.autofill &&
             val.value.autofill.addresses && val.value.autofill.addresses.guid.length || 0
           logVerbose('waitForAddressCount(' + addressCount + ') => ' + ret)
           return ret
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForElementCount', function (selector, count) {
@@ -324,7 +349,7 @@ var exports = {
           logVerbose('waitForElementCount("' + selector + '", ' + count + ') => ' + res.value.length)
           return res.value.length === count
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForResourceReady', function (resourceName) {
@@ -344,7 +369,7 @@ var exports = {
           logVerbose('waitForSettingValue("' + setting + ', ' + value + '") => ' + val.value && val.value.settings && val.value.settings[setting])
           return val.value && val.value.settings && val.value.settings[setting] === value
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForSiteEntry', function (location, waitForTitle = true) {
@@ -357,7 +382,7 @@ var exports = {
           logVerbose('waitForSiteEntry("' + location + ', ' + waitForTitle + '") => ' + ret)
           return ret
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForAddressEntry', function (location, waitForTitle = true) {
@@ -371,7 +396,7 @@ var exports = {
           logVerbose('waitForSiteEntry("' + location + '", ' + waitForTitle + ') => ' + ret)
           return ret
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('waitForBookmarkDetail', function (location, title) {
@@ -387,7 +412,7 @@ var exports = {
             ' (bookmarkDetailLocation = ' + bookmarkDetailLocation + ', bookmarkDetailTitle = ' + bookmarkDetailTitle + ')')
           return ret
         })
-      })
+      }, 5000, null, 100)
     })
 
     this.app.client.addCommand('loadUrl', function (url) {
@@ -436,7 +461,7 @@ var exports = {
             logVerbose('waitForInputText("' + selector + '", "' + input + '") => ' + ret)
             return ret
           })
-        })
+        }, 5000, null, 100)
     })
 
     this.app.client.addCommand('setInputText', function (selector, input) {
@@ -462,7 +487,8 @@ var exports = {
 
     this.app.client.addCommand('openBraveMenu', function (braveMenu, braveryPanel) {
       logVerbose('openBraveMenu()')
-      return this.windowByUrl(exports.browserWindowUrl)
+      return this
+        .waitForBrowserWindow()
         .waitForVisible(braveMenu)
         .click(braveMenu)
         .waitForVisible(braveryPanel)
@@ -492,6 +518,12 @@ var exports = {
       return this.execute(function () {
         return devTools('appActions').newWindow()
       }, frameOpts, browserOpts).then((response) => response.value)
+    })
+
+    this.app.client.addCommand('quit', function () {
+      return this.execute(function () {
+        return devTools('appActions').shuttingDown()
+      }).then((response) => response.value)
     })
 
     /**
@@ -573,6 +605,16 @@ var exports = {
           return devTools('appActions').changeSetting(key, value)
         }, key, value).then((response) => response.value)
         .waitForSettingValue(key, value)
+    })
+
+    /**
+     * Sets the sync init data
+     */
+    this.app.client.addCommand('saveSyncInitData', function (seed, deviceId, lastFetchTimestamp, qr) {
+      return this
+        .execute(function (seed, deviceId, lastFetchTimestamp, qr) {
+          return devTools('appActions').saveSyncInitData(seed, deviceId, lastFetchTimestamp, qr)
+        }, seed, deviceId, lastFetchTimestamp, qr).then((response) => response.value)
     })
 
     /**
@@ -658,10 +700,12 @@ var exports = {
 
     this.app.client.addCommand('windowByUrl', function (url) {
       var context = this
+      logVerbose('windowByUrl("' + url + '")')
       return this.windowHandles().then((response) => response.value).then(function (handles) {
         return promiseMapSeries(handles, function (handle) {
           return context.window(handle).getUrl()
         }).then(function (response) {
+          logVerbose('windowByUrl("' + url + '") => ' + JSON.stringify(response))
           let index = response.indexOf(url)
           if (index !== -1) {
             return context.window(handles[index])
@@ -711,7 +755,7 @@ var exports = {
             .then(function (el) {
               return el.value.ELEMENT === activeElement.value.ELEMENT
             })
-        }, timeout)
+        }, timeout, null, 100)
     })
 
     this.app.client.addCommand('waitForDataFile', function (dataFile) {
@@ -740,7 +784,9 @@ var exports = {
       SPECTRON: true
     }
     this.app = new Application({
+      quitTimeout: 300,
       waitTimeout: exports.defaultTimeout,
+      waitInterval: exports.defaultInterval,
       connectionRetryTimeout: exports.defaultTimeout,
       path: process.platform === 'win32'
         ? 'node_modules/electron-prebuilt/dist/brave.exe'
@@ -753,31 +799,33 @@ var exports = {
   },
 
   stopApp: function (cleanSessionStore = true) {
-    let stop = this.app.stop().then((app) => {
+    const promises = []
+
+    if (process.env.BRAVE_TEST_ALL_LOGS || process.env.BRAVE_TEST_BROWSER_LOGS) {
+      promises.push(this.app.client.getMainProcessLogs().then(function (logs) {
+        logs.forEach(function (log) {
+          console.log(log)
+        })
+      }))
+    }
+    if (process.env.BRAVE_TEST_ALL_LOGS || process.env.BRAVE_TEST_RENDERER_LOGS) {
+      promises.push(this.app.client.getRenderProcessLogs().then(function (logs) {
+        logs.forEach(function (log) {
+          console.log(log)
+        })
+      }))
+    }
+
+    promises.push(this.app.stop().then((app) => {
       if (cleanSessionStore) {
         if (!process.env.KEEP_BRAVE_USER_DATA_DIR) {
           userDataDir && rmDir(userDataDir)
         }
         userDataDir = generateUserDataDir()
       }
-      return app
-    })
+    }))
 
-    if (process.env.BRAVE_TEST_ALL_LOGS || process.env.BRAVE_TEST_BROWSER_LOGS) {
-      this.app.client.getMainProcessLogs().then(function (logs) {
-        logs.forEach(function (log) {
-          console.log(log)
-        })
-      })
-    }
-    if (process.env.BRAVE_TEST_ALL_LOGS || process.env.BRAVE_TEST_RENDERER_LOGS) {
-      this.app.client.getRenderProcessLogs().then(function (logs) {
-        logs.forEach(function (log) {
-          console.log(log)
-        })
-      })
-    }
-    return stop
+    return Promise.all(promises)
   }
 }
 

@@ -32,6 +32,7 @@ const path = require('path')
 const getOrigin = require('../js/state/siteUtil').getOrigin
 const {adBlockResourceName} = require('./adBlock')
 const {updateElectronDownloadItem} = require('./browser/electronDownloadItem')
+const {fullscreenOption} = require('./common/constants/settingsEnums')
 
 let appStore = null
 
@@ -45,7 +46,7 @@ const transparent1pxGif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAE
 const pdfjsOrigin = `chrome-extension://${config.PDFJSExtensionId}`
 
 // Third party domains that require a valid referer to work
-const refererExceptions = ['use.typekit.net', 'cloud.typography.com']
+const refererExceptions = ['use.typekit.net', 'cloud.typography.com', 'www.moremorewin.net']
 
 /**
  * Maps partition name to the session object
@@ -362,6 +363,13 @@ function registerPermissionHandler (session, partition) {
       return
     }
 
+    // Always allow fullscreen if setting is ON
+    const alwaysAllowFullscreen = module.exports.alwaysAllowFullscreen() === fullscreenOption.ALWAYS_ALLOW
+    if (permission === 'fullscreen' && alwaysAllowFullscreen) {
+      cb(true)
+      return
+    }
+
     // The Brave extension and PDFJS are always allowed to open files in an external app
     if (permission === 'openExternal' && (
       origin.startsWith('chrome-extension://' + config.PDFJSExtensionId) ||
@@ -418,7 +426,7 @@ function registerPermissionHandler (session, partition) {
       permissionCallbacks[message](0, false)
     }
 
-    appActions.showMessageBox({
+    appActions.showNotification({
       buttons: [
         {text: locale.translation('deny')},
         {text: locale.translation('allow')}
@@ -432,8 +440,8 @@ function registerPermissionHandler (session, partition) {
 
     permissionCallbacks[message] = (buttonIndex, persist) => {
       permissionCallbacks[message] = null
-      // hide the message box if this was triggered automatically
-      appActions.hideMessageBox(message)
+      // hide the notification if this was triggered automatically
+      appActions.hideNotification(message)
       const result = !!(buttonIndex)
       cb(result)
       if (persist) {
@@ -553,14 +561,27 @@ function initForPartition (partition) {
     registerForDownloadListener,
     registerForMagnetHandler]
   let options = {}
+
   if (isSessionPartition(partition)) {
     options.parent_partition = ''
   }
+
   let ses = session.fromPartition(partition, options)
-  fns.forEach((fn) => { fn(ses, partition, module.exports.isPrivate(partition)) })
+  fns.forEach((fn) => {
+    fn(ses, partition, module.exports.isPrivate(partition))
+  })
+  ses.on('register-navigator-handler', (e, protocol, location) => {
+    appActions.navigatorHandlerRegistered(ses.partition, protocol, location)
+  })
+  ses.on('unregister-navigator-handler', (e, protocol, location) => {
+    appActions.navigatorHandlerUnregistered(ses.partition, protocol, location)
+  })
+  ses.protocol.getNavigatorHandlers().forEach((handler) => {
+    appActions.navigatorHandlerRegistered(ses.partition, handler.protocol, handler.location)
+  })
 }
 
-const filterableProtocols = ['http:', 'https:']
+const filterableProtocols = ['http:', 'https:', 'ws:', 'wss:']
 
 function shouldIgnoreUrl (details) {
   // internal requests
@@ -735,4 +756,8 @@ module.exports.getMainFrameUrl = (details) => {
     return tab.getURL()
   }
   return null
+}
+
+module.exports.alwaysAllowFullscreen = () => {
+  return getSetting(settings.FULLSCREEN_CONTENT)
 }

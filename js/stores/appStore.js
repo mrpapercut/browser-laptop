@@ -9,17 +9,17 @@ const ExtensionConstants = require('../../app/common/constants/extensionConstant
 const AppDispatcher = require('../dispatcher/appDispatcher')
 const appConfig = require('../constants/appConfig')
 const settings = require('../constants/settings')
+const writeActions = require('../constants/sync/proto').actions
 const siteUtil = require('../state/siteUtil')
+const syncUtil = require('../state/syncUtil')
 const siteSettings = require('../state/siteSettings')
 const appUrlUtil = require('../lib/appUrlUtil')
 const electron = require('electron')
 const app = electron.app
-const ipcMain = electron.ipcMain
 const messages = require('../constants/messages')
 const UpdateStatus = require('../constants/updateStatus')
 const BrowserWindow = electron.BrowserWindow
-const LocalShortcuts = require('../../app/localShortcuts')
-const appActions = require('../actions/appActions')
+const syncActions = require('../actions/syncActions')
 const firstDefinedValue = require('../lib/functional').firstDefinedValue
 const dates = require('../../app/dates')
 const getSetting = require('../settings').getSetting
@@ -27,12 +27,12 @@ const EventEmitter = require('events').EventEmitter
 const Immutable = require('immutable')
 const diff = require('immutablediff')
 const debounce = require('../lib/debounce')
-const locale = require('../../app/locale')
 const path = require('path')
 const autofill = require('../../app/autofill')
 const nativeImage = require('../../app/nativeImage')
 const Filtering = require('../../app/filtering')
 const basicAuth = require('../../app/browser/basicAuth')
+const webtorrent = require('../../app/browser/webtorrent')
 const windows = require('../../app/browser/windows')
 const assert = require('assert')
 
@@ -43,8 +43,6 @@ const aboutNewTabState = require('../../app/common/state/aboutNewTabState')
 const aboutHistoryState = require('../../app/common/state/aboutHistoryState')
 const windowState = require('../../app/common/state/windowState')
 
-const webtorrent = require('../../app/browser/webtorrent')
-
 const isDarwin = process.platform === 'darwin'
 const isWindows = process.platform === 'win32'
 
@@ -53,9 +51,9 @@ const CHANGE_EVENT = 'app-state-change'
 
 const defaultProtocols = ['https', 'http']
 
-let appState
+let appState = null
 let lastEmittedState
-let shuttingDown = false
+let initialized = false
 
 // TODO cleanup all this createWindow crap
 function isModal (browserOpts) {
@@ -109,7 +107,12 @@ const setWindowPosition = (browserOpts, defaults, windowState) => {
   return browserOpts
 }
 
-const createWindow = (browserOpts, defaults, frameOpts, windowState) => {
+const createWindow = (action) => {
+  const frameOpts = (action.frameOpts && action.frameOpts.toJS()) || {}
+  let browserOpts = (action.browserOpts && action.browserOpts.toJS()) || {}
+  const windowState = action.restoredState || {}
+  const defaults = windowDefaults()
+
   browserOpts = setWindowDimensions(browserOpts, defaults, windowState)
   browserOpts = setWindowPosition(browserOpts, defaults, windowState)
 
@@ -183,65 +186,50 @@ const createWindow = (browserOpts, defaults, frameOpts, windowState) => {
     windowProps.icon = path.join(__dirname, '..', '..', 'res', 'app.png')
   }
 
-  let mainWindow = new BrowserWindow(Object.assign(windowProps, browserOpts))
+  const homepageSetting = getSetting(settings.HOMEPAGE)
+  const startupSetting = getSetting(settings.STARTUP_MODE)
 
-  mainWindow.setMenuBarVisibility(true)
+  setImmediate(() => {
+    let mainWindow = new BrowserWindow(Object.assign(windowProps, browserOpts))
 
-  if (windowState.ui && windowState.ui.isMaximized) {
-    mainWindow.maximize()
-  }
-
-  if (windowState.ui && windowState.ui.isFullScreen) {
-    mainWindow.setFullScreen(true)
-  }
-
-  mainWindow.on('close', function () {
-    LocalShortcuts.unregister(mainWindow)
-  })
-
-  mainWindow.on('closed', function () {
-    mainWindow = null
-  })
-
-  mainWindow.on('scroll-touch-begin', function (e) {
-    mainWindow.webContents.send('scroll-touch-begin')
-  })
-
-  mainWindow.on('scroll-touch-end', function (e) {
-    mainWindow.webContents.send('scroll-touch-end')
-  })
-
-  mainWindow.on('scroll-touch-edge', function (e) {
-    mainWindow.webContents.send('scroll-touch-edge')
-  })
-
-  mainWindow.on('enter-full-screen', function () {
-    if (mainWindow.isMenuBarVisible()) {
-      mainWindow.setMenuBarVisibility(false)
+    // initialize frames state
+    let frames = []
+    if (frameOpts && Object.keys(frameOpts).length > 0) {
+      if (frameOpts.forEach) {
+        frames = frameOpts
+      } else {
+        frames.push(frameOpts)
+      }
+    } else if (startupSetting === 'homePage' && homepageSetting) {
+      frames = homepageSetting.split('|').map((homepage) => {
+        return {
+          location: homepage
+        }
+      })
     }
+
+    mainWindow.webContents.on('did-finish-load', (e) => {
+      lastEmittedState = appState
+      e.sender.send(messages.INITIALIZE_WINDOW, frameOpts.disposition, appState.toJS(), frames, action.restoredState)
+      if (action.cb) {
+        action.cb()
+      }
+    })
+
+    mainWindow.on('ready-to-show', () => {
+      mainWindow.show()
+
+      if (windowState.ui && windowState.ui.isMaximized) {
+        mainWindow.maximize()
+      }
+
+      if (windowState.ui && windowState.ui.isFullScreen) {
+        mainWindow.setFullScreen(true)
+      }
+    })
+
+    mainWindow.loadURL(appUrlUtil.getBraveExtIndexHTML())
   })
-
-  mainWindow.on('leave-full-screen', function () {
-    mainWindow.webContents.send(messages.LEAVE_FULL_SCREEN)
-
-    if (getSetting(settings.AUTO_HIDE_MENU) === false) {
-      mainWindow.setMenuBarVisibility(true)
-    }
-  })
-
-  mainWindow.on('app-command', function (e, cmd) {
-    switch (cmd) {
-      case 'browser-backward':
-        mainWindow.webContents.send(messages.SHORTCUT_ACTIVE_FRAME_BACK)
-        return
-      case 'browser-forward':
-        mainWindow.webContents.send(messages.SHORTCUT_ACTIVE_FRAME_FORWARD)
-        return
-    }
-  })
-
-  LocalShortcuts.register(mainWindow)
-  return mainWindow
 }
 
 class AppStore extends EventEmitter {
@@ -356,7 +344,9 @@ const applyReducers = (state, action) => [
   require('../../app/browser/reducers/flashReducer'),
   require('../../app/browser/reducers/tabsReducer'),
   require('../../app/browser/reducers/spellCheckReducer'),
-  require('../../app/browser/reducers/clipboardReducer')
+  require('../../app/browser/reducers/clipboardReducer'),
+  require('../../app/browser/reducers/passwordManagerReducer'),
+  require('../../app/browser/reducers/tabMessageBoxReducer')
 ].reduce(
     (appState, reducer) => {
       const newState = reducer(appState, action)
@@ -366,79 +356,39 @@ const applyReducers = (state, action) => [
     }, appState)
 
 const handleAppAction = (action) => {
-  if (shuttingDown) {
-    return
+  const ledger = require('../../app/ledger')
+
+  if (action.actionType === appConstants.APP_SET_STATE) {
+    initialized = true
+    appState = action.appState
   }
 
-  const ledger = require('../../app/ledger')
+  if (!initialized) {
+    console.error('Action called before state was initialized: ' + action.actionType)
+    return
+  }
 
   appState = applyReducers(appState, action)
 
   switch (action.actionType) {
     case appConstants.APP_SET_STATE:
-      appState = action.appState
+      // DO NOT ADD TO THIS LIST
+      // See tabsReducer.js for app state init example
+      // TODO(bridiver) - these shold be refactored into reducers
       appState = Filtering.init(appState, action, appStore)
       appState = windows.init(appState, action, appStore)
       appState = basicAuth.init(appState, action, appStore)
       appState = webtorrent.init(appState, action, appStore)
+      appState = require('../../app/browser/menu').init(appState, action, appStore)
+      appState = require('../../app/sync').init(appState, action, appStore)
+      ledger.init()
       break
     case appConstants.APP_SHUTTING_DOWN:
-      shuttingDown = true
+      AppDispatcher.shutdown()
+      app.quit()
       break
     case appConstants.APP_NEW_WINDOW:
-      const frameOpts = (action.frameOpts && action.frameOpts.toJS()) || {}
-      const browserOpts = (action.browserOpts && action.browserOpts.toJS()) || {}
-      const newWindowState = action.restoredState || {}
-
-      const mainWindow = createWindow(browserOpts, windowDefaults(), frameOpts, newWindowState)
-      const homepageSetting = getSetting(settings.HOMEPAGE)
-
-      // initialize frames state
-      let frames = []
-      if (frameOpts) {
-        if (frameOpts.forEach) {
-          frames = frameOpts
-        } else {
-          frames.push(frameOpts)
-        }
-      } else if (getSetting(settings.STARTUP_MODE) === 'homePage' && homepageSetting) {
-        frames = homepageSetting.split('|').map((homepage) => {
-          return {
-            location: homepage
-          }
-        })
-      }
-
-      mainWindow.webContents.on('did-finish-load', (e) => {
-        lastEmittedState = appState
-        e.sender.send(messages.INITIALIZE_WINDOW, frameOpts.disposition, appState.toJS(), frames, action.restoredState)
-        if (action.cb) {
-          action.cb()
-        }
-      })
-      mainWindow.webContents.on('crashed', (e) => {
-        console.error('Window crashed. Reloading...')
-        mainWindow.loadURL(appUrlUtil.getBraveExtIndexHTML())
-
-        ipcMain.on(messages.NOTIFICATION_RESPONSE, function notificationResponseCallback (e, message, buttonIndex, persist) {
-          if (message === locale.translation('unexpectedErrorWindowReload')) {
-            appActions.hideMessageBox(message)
-            ipcMain.removeListener(messages.NOTIFICATION_RESPONSE, notificationResponseCallback)
-          }
-        })
-
-        appActions.showMessageBox({
-          buttons: [
-            {text: locale.translation('ok')}
-          ],
-          options: {
-            persist: false
-          },
-          message: locale.translation('unexpectedErrorWindowReload')
-        })
-      })
-      mainWindow.loadURL(appUrlUtil.getBraveExtIndexHTML())
-      mainWindow.show()
+      createWindow(action)
       break
     case appConstants.APP_CLOSE_WINDOW:
       appState = windows.closeWindow(appState, action)
@@ -482,18 +432,47 @@ const handleAppAction = (action) => {
     case appConstants.APP_DATA_URL_COPIED:
       nativeImage.copyDataURL(action.dataURL, action.html, action.text)
       break
+    case appConstants.APP_APPLY_SITE_RECORDS:
+      action.records.forEach((record) => {
+        const siteData = syncUtil.getSiteDataFromRecord(record, appState)
+        const tag = siteData.tag
+        let siteDetail = siteData.siteDetail
+        const sites = appState.get('sites')
+        if (record.action !== writeActions.DELETE &&
+          !siteDetail.get('folderId') && siteUtil.isFolder(siteDetail)) {
+          siteDetail = siteDetail.set('folderId', siteUtil.getNextFolderId(sites))
+        }
+        switch (record.action) {
+          case writeActions.CREATE:
+            appState = appState.set('sites',
+              siteUtil.addSite(sites, siteDetail, tag))
+            break
+          case writeActions.UPDATE:
+            appState = appState.set('sites',
+              siteUtil.addSite(sites, siteDetail, tag, siteData.existingObjectData))
+            break
+          case writeActions.DELETE:
+            appState = appState.set('sites',
+              siteUtil.removeSite(sites, siteDetail, tag))
+            break
+        }
+      })
+      appState = aboutNewTabState.setSites(appState)
+      appState = aboutHistoryState.setHistory(appState)
+      break
     case appConstants.APP_ADD_SITE:
       const oldSiteSize = appState.get('sites').size
+      const addSiteSyncCallback = action.skipSync ? undefined : syncActions.updateSite
       if (action.siteDetail.constructor === Immutable.List) {
         action.siteDetail.forEach((s) => {
-          appState = appState.set('sites', siteUtil.addSite(appState.get('sites'), s, action.tag))
+          appState = appState.set('sites', siteUtil.addSite(appState.get('sites'), s, action.tag, undefined, addSiteSyncCallback))
         })
       } else {
         let sites = appState.get('sites')
         if (!action.siteDetail.get('folderId') && siteUtil.isFolder(action.siteDetail)) {
           action.siteDetail = action.siteDetail.set('folderId', siteUtil.getNextFolderId(sites))
         }
-        appState = appState.set('sites', siteUtil.addSite(sites, action.siteDetail, action.tag))
+        appState = appState.set('sites', siteUtil.addSite(sites, action.siteDetail, action.tag, action.originalSiteDetail, addSiteSyncCallback))
       }
       if (action.destinationDetail) {
         appState = appState.set('sites', siteUtil.moveSite(appState.get('sites'),
@@ -507,7 +486,8 @@ const handleAppAction = (action) => {
       appState = aboutHistoryState.setHistory(appState, action)
       break
     case appConstants.APP_REMOVE_SITE:
-      appState = appState.set('sites', siteUtil.removeSite(appState.get('sites'), action.siteDetail, action.tag, true))
+      const removeSiteSyncCallback = action.skipSync ? undefined : syncActions.removeSite
+      appState = appState.set('sites', siteUtil.removeSite(appState.get('sites'), action.siteDetail, action.tag, true, removeSiteSyncCallback))
       appState = aboutNewTabState.setSites(appState, action)
       appState = aboutHistoryState.setHistory(appState, action)
       break
@@ -515,13 +495,15 @@ const handleAppAction = (action) => {
       {
         appState = appState.set('sites', siteUtil.moveSite(appState.get('sites'),
           action.sourceDetail, action.destinationDetail, action.prepend,
-          action.destinationIsParent, false))
+          action.destinationIsParent, false, syncActions.updateSite))
         break
       }
     case appConstants.APP_CLEAR_HISTORY:
-      appState = appState.set('sites', siteUtil.clearHistory(appState.get('sites')))
+      appState = appState.set('sites',
+        siteUtil.clearHistory(appState.get('sites'), syncActions.updateSite))
       appState = aboutNewTabState.setSites(appState, action)
       appState = aboutHistoryState.setHistory(appState, action)
+      syncActions.clearHistory()
       break
     case appConstants.APP_DEFAULT_WINDOW_PARAMS_CHANGED:
       if (action.size && action.size.size === 2) {
@@ -581,8 +563,6 @@ const handleAppAction = (action) => {
     case appConstants.APP_ALLOW_FLASH_ONCE:
       {
         const propertyName = action.isPrivate ? 'temporarySiteSettings' : 'siteSettings'
-        console.log(siteUtil.getOrigin(action.url))
-        console.log(propertyName)
         appState = appState.set(propertyName,
           siteSettings.mergeSiteSetting(appState.get(propertyName), siteUtil.getOrigin(action.url), 'flash', 1))
         break
@@ -598,8 +578,17 @@ const handleAppAction = (action) => {
     case appConstants.APP_CHANGE_SITE_SETTING:
       {
         let propertyName = action.temporary ? 'temporarySiteSettings' : 'siteSettings'
-        appState = appState.set(propertyName,
-          siteSettings.mergeSiteSetting(appState.get(propertyName), action.hostPattern, action.key, action.value))
+        let newSiteSettings = siteSettings.mergeSiteSetting(appState.get(propertyName), action.hostPattern, action.key, action.value)
+        if (!action.temporary) {
+          let syncObject = siteUtil.setObjectId(newSiteSettings.get(action.hostPattern))
+          if (!action.skipSync) {
+            const objectId = syncObject.get('objectId')
+            const item = new Immutable.Map({objectId, [action.key]: action.value})
+            syncActions.updateSiteSetting(action.hostPattern, item)
+          }
+          newSiteSettings = newSiteSettings.set(action.hostPattern, syncObject)
+        }
+        appState = appState.set(propertyName, newSiteSettings)
         break
       }
     case appConstants.APP_REMOVE_SITE_SETTING:
@@ -607,6 +596,15 @@ const handleAppAction = (action) => {
         let propertyName = action.temporary ? 'temporarySiteSettings' : 'siteSettings'
         let newSiteSettings = siteSettings.removeSiteSetting(appState.get(propertyName),
           action.hostPattern, action.key)
+        if (!action.temporary) {
+          let syncObject = siteUtil.setObjectId(newSiteSettings.get(action.hostPattern))
+          if (!action.skipSync) {
+            const objectId = syncObject.get('objectId')
+            const item = new Immutable.Map({objectId, [action.key]: null})
+            syncActions.removeSiteSetting(action.hostPattern, item)
+          }
+          newSiteSettings = newSiteSettings.set(action.hostPattern, syncObject)
+        }
         appState = appState.set(propertyName, newSiteSettings)
         break
       }
@@ -615,18 +613,40 @@ const handleAppAction = (action) => {
         let propertyName = action.temporary ? 'temporarySiteSettings' : 'siteSettings'
         let newSiteSettings = new Immutable.Map()
         appState.get(propertyName).map((entry, hostPattern) => {
-          newSiteSettings = newSiteSettings.set(hostPattern, entry.delete(action.key))
+          let newEntry = entry.delete(action.key)
+          if (!action.skipSync) {
+            newEntry = siteUtil.setObjectId(newEntry)
+            const objectId = newEntry.get('objectId')
+            const item = new Immutable.Map({objectId, [action.key]: null})
+            syncActions.removeSiteSetting(hostPattern, item)
+          }
+          newSiteSettings = newSiteSettings.set(hostPattern, newEntry)
         })
         appState = appState.set(propertyName, newSiteSettings)
         break
       }
+    case appConstants.APP_ADD_NOSCRIPT_EXCEPTIONS:
+      // Note that this is always cleared on restart or reload, so should not
+      // be synced or persisted.
+      let key = 'noScriptExceptions'
+      if (!action.origins || !action.origins.size) {
+        // Clear the exceptions
+        appState = appState.setIn(['siteSettings', action.hostPattern, key], new Immutable.Map())
+      } else {
+        const currentExceptions = appState.getIn(['siteSettings', action.hostPattern, key]) || new Immutable.Map()
+        appState = appState.setIn(['siteSettings', action.hostPattern, key], currentExceptions.merge(action.origins))
+      }
+      break
     case appConstants.APP_UPDATE_LEDGER_INFO:
       appState = appState.set('ledgerInfo', Immutable.fromJS(action.ledgerInfo))
+      break
+    case appConstants.APP_UPDATE_LOCATION_INFO:
+      appState = appState.set('locationInfo', Immutable.fromJS(action.locationInfo))
       break
     case appConstants.APP_UPDATE_PUBLISHER_INFO:
       appState = appState.set('publisherInfo', Immutable.fromJS(action.publisherInfo))
       break
-    case appConstants.APP_SHOW_MESSAGE_BOX:
+    case appConstants.APP_SHOW_NOTIFICATION:
       let notifications = appState.get('notifications')
       notifications = notifications.filterNot((notification) => {
         let message = notification.get('message')
@@ -657,12 +677,12 @@ const handleAppAction = (action) => {
       notifications = notifications.insert(insertIndex, Immutable.fromJS(action.detail))
       appState = appState.set('notifications', notifications)
       break
-    case appConstants.APP_HIDE_MESSAGE_BOX:
+    case appConstants.APP_HIDE_NOTIFICATION:
       appState = appState.set('notifications', appState.get('notifications').filterNot((notification) => {
         return notification.get('message') === action.message
       }))
       break
-    case appConstants.APP_CLEAR_MESSAGE_BOXES:
+    case appConstants.APP_CLEAR_NOTIFICATIONS:
       appState = appState.set('notifications', appState.get('notifications').filterNot((notification) => {
         return notification.get('frameOrigin') === action.origin
       }))
@@ -725,6 +745,7 @@ const handleAppAction = (action) => {
       if (action.clearDataDetail.get('savedSiteSettings')) {
         appState = appState.set('siteSettings', Immutable.Map())
         appState = appState.set('temporarySiteSettings', Immutable.Map())
+        syncActions.clearSiteSettings()
       }
       break
     case appConstants.APP_IMPORT_BROWSER_DATA:
@@ -832,6 +853,46 @@ const handleAppAction = (action) => {
     case appConstants.APP_RENDER_URL_TO_PDF:
       const pdf = require('../../app/pdf')
       appState = pdf.renderUrlToPdf(appState, action)
+      break
+    case appConstants.APP_SET_OBJECT_ID:
+      let obj = appState.getIn(action.objectPath)
+      if (obj && obj.constructor === Immutable.Map) {
+        appState = appState.setIn(action.objectPath.concat(['objectId']),
+          action.objectId)
+      }
+      break
+    case appConstants.APP_SAVE_SYNC_INIT_DATA:
+      if (action.deviceId) {
+        appState = appState.setIn(['sync', 'deviceId'], action.deviceId)
+      }
+      if (action.seed) {
+        appState = appState.setIn(['sync', 'seed'], action.seed)
+      }
+      if (action.lastFetchTimestamp) {
+        appState = appState.setIn(['sync', 'lastFetchTimestamp'], action.lastFetchTimestamp)
+      }
+      if (action.seedQr) {
+        appState = appState.setIn(['sync', 'seedQr'], action.seedQr)
+      }
+      break
+    case appConstants.APP_RESET_SYNC_DATA:
+      const sessionStore = require('../../app/sessionStore')
+      const syncDefault = Immutable.fromJS(sessionStore.defaultAppState().sync)
+      appState = appState.set('sync', syncDefault)
+      appState.get('sites').forEach((site, key) => {
+        if (!site.has('objectId')) { return }
+        appState = appState.setIn(['sites', key], site.delete('objectId'))
+      })
+      appState.get('siteSettings').forEach((site, key) => {
+        if (!site.has('objectId')) { return }
+        appState = appState.setIn(['siteSettings', key], site.delete('objectId'))
+      })
+      break
+    case appConstants.APP_SHOW_DOWNLOAD_DELETE_CONFIRMATION:
+      appState = appState.set('deleteConfirmationVisible', true)
+      break
+    case appConstants.APP_HIDE_DOWNLOAD_DELETE_CONFIRMATION:
+      appState = appState.set('deleteConfirmationVisible', false)
       break
     default:
   }

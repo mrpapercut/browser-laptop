@@ -36,7 +36,7 @@ const AutofillAddressPanel = require('./autofillAddressPanel')
 const AutofillCreditCardPanel = require('./autofillCreditCardPanel')
 const AddEditBookmark = require('./addEditBookmark')
 const LoginRequired = require('./loginRequired')
-const ReleaseNotes = require('./releaseNotes')
+const ReleaseNotes = require('../../app/renderer/components/releaseNotes')
 const BookmarksToolbar = require('../../app/renderer/components/bookmarksToolbar')
 const ContextMenu = require('./contextMenu')
 const PopupWindow = require('./popupWindow')
@@ -683,8 +683,10 @@ class Main extends ImmutableComponent {
 
   onDrop (e) {
     if (e.dataTransfer.files.length > 0) {
-      Array.from(e.dataTransfer.files).forEach((file) =>
-        windowActions.newFrame({location: file.path, title: file.name}))
+      Array.from(e.dataTransfer.files).forEach((file) => {
+        const path = encodeURI(file.path)
+        return windowActions.newFrame({location: path, title: file.name})
+      })
     } else if (e.dataTransfer.getData('text/plain')) {
       let activeFrame = frameStateUtil.getActiveFrame(this.props.windowState)
       if (activeFrame) {
@@ -907,6 +909,7 @@ class Main extends ImmutableComponent {
       !customTitlebar.menubarSelectedIndex
 
     const appStateSites = this.props.appState.get('sites')
+    const activeTabShowingMessageBox = !!(activeTab && activeTab.get('messageBoxDetail'))
 
     return <div id='window'
       className={cx({
@@ -959,12 +962,12 @@ class Main extends ImmutableComponent {
                 <div className={cx({
                   navigationButtonContainer: true,
                   nav: true,
-                  disabled: !activeTab || !activeTab.get('canGoBack')
+                  disabled: !activeTab || !activeTab.get('canGoBack') || activeTabShowingMessageBox
                 })}>
                   <LongPressButton
                     l10nId='backButton'
                     className='navigationButton backButton'
-                    disabled={!activeTab || !activeTab.get('canGoBack')}
+                    disabled={!activeTab || !activeTab.get('canGoBack') || activeTabShowingMessageBox}
                     onClick={this.onBack}
                     onLongPress={this.onBackLongPress}
                   />
@@ -972,12 +975,12 @@ class Main extends ImmutableComponent {
                 <div className={cx({
                   navigationButtonContainer: true,
                   nav: true,
-                  disabled: !activeTab || !activeTab.get('canGoForward')
+                  disabled: !activeTab || !activeTab.get('canGoForward') || activeTabShowingMessageBox
                 })}>
                   <LongPressButton
                     l10nId='forwardButton'
                     className='navigationButton forwardButton'
-                    disabled={!activeTab || !activeTab.get('canGoForward')}
+                    disabled={!activeTab || !activeTab.get('canGoForward') || activeTabShowingMessageBox}
                     onClick={this.onForward}
                     onLongPress={this.onForwardLongPress}
                   />
@@ -1010,6 +1013,8 @@ class Main extends ImmutableComponent {
                 menubarVisible={customTitlebar.menubarVisible}
                 siteSettings={this.props.appState.get('siteSettings')}
                 synopsis={this.props.appState.getIn(['publisherInfo', 'synopsis']) || new Immutable.Map()}
+                activeTabShowingMessageBox={activeTabShowingMessageBox}
+                locationInfo={this.props.appState.get('locationInfo')}
               />
               <div className='topLevelEndButtons'>
                 <div className={cx({
@@ -1017,7 +1022,9 @@ class Main extends ImmutableComponent {
                   allowDragging: shouldAllowWindowDrag
                 })} />
                 {
-                  this.extensionButtons
+                  activeTabShowingMessageBox
+                    ? null
+                    : this.extensionButtons
                 }
                 <Button iconClass='braveMenu'
                   l10nId='braveMenu'
@@ -1027,6 +1034,8 @@ class Main extends ImmutableComponent {
                     braveShieldsDown: !braverySettings.shieldsUp,
                     leftOfCaptionButton: customTitlebar.captionButtonsVisible && !customTitlebar.menubarVisible
                   })}
+                  data-test-id='braveShieldButton'
+                  disabled={activeTabShowingMessageBox}
                   onClick={this.onBraveMenu} />
                 {
                   customTitlebar.captionButtonsVisible && !customTitlebar.menubarVisible
@@ -1115,7 +1124,6 @@ class Main extends ImmutableComponent {
         {
           noScriptIsVisible
             ? <NoScriptInfo frameProps={activeFrame}
-              noScriptGlobalEnabled={this.props.appState.getIn(['noScript', 'enabled'])}
               onHide={this.onHideNoScript} />
             : null
         }
@@ -1182,6 +1190,11 @@ class Main extends ImmutableComponent {
           key='tab-bar'
           activeFrameKey={activeFrame && activeFrame.get('key') || undefined}
           onMenu={this.onHamburgerMenu}
+          hasTabInFullScreen={
+            sortedFrames
+              .map((frame) => frame.get('isFullScreen'))
+              .some(fullScreenMode => fullScreenMode === true)
+          }
         />
         {
           this.props.appState.get('notifications') && this.props.appState.get('notifications').size && activeFrame
@@ -1272,6 +1285,7 @@ class Main extends ImmutableComponent {
                 widevine={this.props.appState.get('widevine')}
                 cookieblock={this.props.appState.get('cookieblock')}
                 allSiteSettings={allSiteSettings}
+                sync={this.props.appState.get('sync') || new Immutable.Map()}
                 ledgerInfo={this.props.appState.get('ledgerInfo') || new Immutable.Map()}
                 publisherInfo={this.props.appState.get('publisherInfo') || new Immutable.Map()}
                 frameSiteSettings={this.frameSiteSettings(frame.get('location'))}
@@ -1295,6 +1309,7 @@ class Main extends ImmutableComponent {
         this.props.windowState.getIn(['ui', 'downloadsToolbar', 'isVisible']) && this.props.appState.get('downloads') && this.props.appState.get('downloads').size > 0
         ? <DownloadsBar
           windowWidth={window.innerWidth}
+          deleteConfirmationVisible={this.props.appState.get('deleteConfirmationVisible')}
           downloads={this.props.appState.get('downloads')} />
         : null
       }

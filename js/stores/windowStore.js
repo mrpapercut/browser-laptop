@@ -4,6 +4,7 @@
 
 const AppDispatcher = require('../dispatcher/appDispatcher')
 const EventEmitter = require('events').EventEmitter
+const appActions = require('../actions/appActions')
 const appConstants = require('../constants/appConstants')
 const windowConstants = require('../constants/windowConstants')
 const config = require('../constants/config')
@@ -337,6 +338,7 @@ const doAction = (action) => {
       // Use the frameProps we passed in, or default to the active frame
       const frameProps = action.frameProps || frameStateUtil.getActiveFrame(windowState)
       const index = frameStateUtil.getFramePropsIndex(windowState.get('frames'), frameProps)
+      const hoverState = windowState.getIn(['frames', index, 'hoverState'])
       const activeFrameKey = frameStateUtil.getActiveFrame(windowState).get('key')
       windowState = windowState.merge(frameStateUtil.removeFrame(
         windowState.get('frames'),
@@ -352,6 +354,18 @@ const doAction = (action) => {
       if (frameStateUtil.getNonPinnedFrameCount(windowState) % getSetting(settings.TABS_PER_PAGE) === 0) {
         updateTabPageIndex(frameStateUtil.getActiveFrame(windowState))
         windowState = windowState.deleteIn(['ui', 'tabs', 'fixTabWidth'])
+      }
+
+      const nextFrame = frameStateUtil.getFrameByIndex(windowState, index)
+
+      // Copy the hover state if tab closed with mouse as long as we have a next frame
+      // This allow us to have closeTab button visible  for sequential frames closing, until onMouseLeave event happens.
+      if (hoverState && nextFrame) {
+        doAction({
+          actionType: windowConstants.WINDOW_SET_TAB_HOVER_STATE,
+          frameProps: nextFrame,
+          hoverState: hoverState
+        })
       }
       break
     case windowConstants.WINDOW_UNDO_CLOSED_FRAME:
@@ -395,6 +409,14 @@ const doAction = (action) => {
       } else {
         updateTabPageIndex(action.frameProps)
       }
+      break
+    case windowConstants.WINDOW_SET_TAB_BREAKPOINT:
+      windowState = windowState.setIn(['frames', frameStateUtil.getFramePropsIndex(windowState.get('frames'), action.frameProps), 'breakpoint'], action.breakpoint)
+      windowState = windowState.setIn(['tabs', frameStateUtil.getFramePropsIndex(windowState.get('frames'), action.frameProps), 'breakpoint'], action.breakpoint)
+      break
+    case windowConstants.WINDOW_SET_TAB_HOVER_STATE:
+      windowState = windowState.setIn(['frames', frameStateUtil.getFramePropsIndex(windowState.get('frames'), action.frameProps), 'hoverState'], action.hoverState)
+      windowState = windowState.setIn(['tabs', frameStateUtil.getFramePropsIndex(windowState.get('frames'), action.frameProps), 'hoverState'], action.hoverState)
       break
     case windowConstants.WINDOW_SET_IS_BEING_DRAGGED_OVER_DETAIL:
       if (!action.dragOverKey) {
@@ -792,11 +814,15 @@ const frameShortcuts = ['stop', 'reload', 'zoom-in', 'zoom-out', 'zoom-reset', '
 frameShortcuts.forEach((shortcut) => {
   // Listen for actions on the active frame
   ipc.on(`shortcut-active-frame-${shortcut}`, (e, args) => {
-    windowState = windowState.mergeIn(activeFrameStatePath(windowState), {
-      activeShortcut: shortcut,
-      activeShortcutDetails: args
-    })
-    emitChanges()
+    if (shortcut === 'toggle-dev-tools') {
+      appActions.toggleDevTools(frameStateUtil.getActiveFrameTabId(windowState))
+    } else {
+      windowState = windowState.mergeIn(activeFrameStatePath(windowState), {
+        activeShortcut: shortcut,
+        activeShortcutDetails: args
+      })
+      emitChanges()
+    }
   })
   // Listen for actions on frame N
   if (['reload', 'mute'].includes(shortcut)) {
@@ -811,17 +837,23 @@ frameShortcuts.forEach((shortcut) => {
   }
 })
 
-// Allows the parent process to dispatch window actions
-ipc.on(messages.DISPATCH_ACTION, (e, serializedPayload) => {
-  let action = Serializer.deserialize(serializedPayload)
-  let queryInfo = action.queryInfo || action.frameProps || {}
+const dispatchEventPayload = (e, payload) => {
+  let queryInfo = payload.queryInfo || payload.frameProps || {}
   queryInfo = queryInfo.toJS ? queryInfo.toJS() : queryInfo
   if (queryInfo.windowId === -2 && isFocused()) {
     queryInfo.windowId = currentWindowId
   }
   // handle any ipc dispatches that are targeted to this window
   if (queryInfo.windowId && queryInfo.windowId === currentWindowId) {
-    doAction(action)
+    doAction(payload)
+  }
+}
+
+// Allows the parent process to dispatch window actions
+ipc.on(messages.DISPATCH_ACTION, (e, serializedPayload) => {
+  let payload = Serializer.deserialize(serializedPayload)
+  for (var i = 0; i < payload.length; i++) {
+    dispatchEventPayload(e, payload[i])
   }
 })
 

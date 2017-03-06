@@ -4,7 +4,15 @@ const globalStyles = {
     breakpointNarrowViewport: '600px',
     breakpointExtensionButtonPadding: '720px',
     breakpointSmallWin32: '650px',
-    breakpointTinyWin32: '500px'
+    breakpointTinyWin32: '500px',
+    tab: {
+      largeMedium: '83px',
+      medium: '66px',
+      mediumSmall: '53px',
+      small: '42px',
+      extraSmall: '33px',
+      smallest: '19px'
+    }
   },
   color: {
     linkColor: '#0099CC',
@@ -72,6 +80,7 @@ const globalStyles = {
     defaultSpacing: '12px',
     defaultFontSize: '13px',
     contextMenuFontSize: '14px',
+    textAreaFontSize: '14.5px',
     dragSpacing: '50px',
     switchHeight: '16px',
     switchWidth: '45px',
@@ -79,6 +88,8 @@ const globalStyles = {
     switchNubTopMargin: '2px',
     switchNubLeftMargin: '2px',
     switchNubRightMargin: '2px',
+    buttonHeight: '25px',
+    buttonWidth: '25px',
     navbarHeight: '36px',
     downloadsBarHeight: '50px',
     tabsToolbarHeight: '28px',
@@ -93,7 +104,15 @@ const globalStyles = {
     navbarBraveButtonMarginLeft: '80px',
     navbarLeftMarginDarwin: '76px',
     sideBarWidth: '190px',
-    aboutPageSectionPadding: '24px'
+    aboutPageSectionPadding: '24px',
+    aboutPageSectionMargin: '10px',
+    defaultTabPadding: '0 4px',
+    defaultIconPadding: '2px',
+    iconSize: '16px',
+    dialogTopOffset: '30px',
+    paymentsMargin: '20px',
+    modalPanelHeaderMarginBottom: '.5em',
+    paddingHorizontal: '30px'
   },
   shadow: {
     switchShadow: 'inset 0 1px 4px rgba(0, 0, 0, 0.35)',
@@ -102,7 +121,7 @@ const globalStyles = {
     dialogShadow: '0px 8px 22px 0px rgba(0, 0, 0, .5)',
     softBoxShadow: '0 4px 8px lightGray',
     lightBoxShadow: '0 2px 2px lightGray',
-    insetShadow: 'inset -5px 0 15px black25',
+    insetShadow: 'inset -5px 0 15px rgba(0,0,0,0.25)',
     orangeButtonShadow: '0 2px 0 braveDarkOrange'
   },
   transition: {
@@ -114,7 +133,8 @@ const globalStyles = {
     transitionFastEase: 'all 100ms ease',
     transitionSlowEase: 'all 1s ease',
     switchBGTransition: 'background-color 100ms',
-    switchNubTransition: 'right 100ms'
+    switchNubTransition: 'right 100ms',
+    tabBackgroundTransition: 'background-color 100ms linear'
   },
   zindex: {
     zindexWindowNotActive: '900',
@@ -134,6 +154,23 @@ const globalStyles = {
     zindexSuggestionText: '3100',
     zindexWindowFullScreen: '4000',
     zindexWindowFullScreenBanner: '4100'
+  },
+  fontSize: {
+    tabIcon: '14px',
+    tabTitle: '12px'
+  },
+  appIcons: {
+    clipboard: 'fa fa-clipboard',
+    closeTab: 'fa fa-times-circle',
+    defaultIcon: 'fa fa-file-o',
+    loading: 'fa fa-spinner fa-spin',
+    newSession: 'fa fa-user',
+    private: 'fa fa-eye',
+    refresh: 'fa fa-refresh',
+    remove: 'fa fa-times',
+    volumeOff: 'fa fa-volume-off',
+    volumeOn: 'fa fa-volume-up',
+    exclude: 'fa fa-ban'
   }
 }
 

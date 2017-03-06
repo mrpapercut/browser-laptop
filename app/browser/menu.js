@@ -24,7 +24,7 @@ const {fileUrl} = require('../../js/lib/appUrlUtil')
 const menuUtil = require('../common/lib/menuUtil')
 const getSetting = require('../../js/settings').getSetting
 const locale = require('../locale')
-const {isSiteBookmarked} = require('../../js/state/siteUtil')
+const {isSiteBookmarked, siteSort} = require('../../js/state/siteUtil')
 const isDarwin = process.platform === 'darwin'
 const aboutUrl = 'https://brave.com/'
 
@@ -362,10 +362,11 @@ const createBookmarksSubmenu = () => {
     CommonMenu.bookmarksManagerMenuItem(),
     CommonMenu.bookmarksToolbarMenuItem(),
     CommonMenu.separatorMenuItem,
-    CommonMenu.importBrowserDataMenuItem()
+    CommonMenu.importBrowserDataMenuItem(),
+    CommonMenu.exportBookmarksMenuItem()
   ]
 
-  const bookmarks = menuUtil.createBookmarkTemplateItems(appStore.getState().get('sites'))
+  const bookmarks = menuUtil.createBookmarkTemplateItems(appStore.getState().get('sites').toList().sort(siteSort))
   if (bookmarks.length > 0) {
     submenu.push(CommonMenu.separatorMenuItem)
     submenu = submenu.concat(bookmarks)
@@ -426,7 +427,6 @@ const createWindowSubmenu = () => {
 
 const createHelpSubmenu = () => {
   const submenu = [
-    CommonMenu.separatorMenuItem,
     CommonMenu.submitFeedbackMenuItem(),
     {
       label: locale.translation('spreadTheWord'),
@@ -620,6 +620,13 @@ const doAction = (action) => {
         }
       })
       break
+    case appConstants.APP_APPLY_SITE_RECORDS:
+      if (action.records.find((record) => record.objectData === 'bookmark')) {
+        appDispatcher.waitFor([appStore.dispatchToken], () => {
+          createMenu()
+        })
+      }
+      break
     case appConstants.APP_ADD_SITE:
       if (action.tag === siteTags.BOOKMARK || action.tag === siteTags.BOOKMARK_FOLDER) {
         appDispatcher.waitFor([appStore.dispatchToken], () => {
@@ -674,4 +681,5 @@ const doAction = (action) => {
 module.exports.init = (appState) => {
   createMenu()
   appDispatcher.register(doAction)
+  return appState
 }

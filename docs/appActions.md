@@ -73,7 +73,7 @@ Closes an open tab
 
 
 
-### addSite(siteDetail, tag, originalSiteDetail, destinationIsParent) 
+### addSite(siteDetail, tag, originalSiteDetail, destinationIsParent, skipSync) 
 
 Adds a site to the site list
 
@@ -88,6 +88,8 @@ Adds a site to the site list
 **destinationIsParent**: `boolean`, Whether or not the destinationDetail should be considered the new parent.
   The details of the old entries will be modified if this is set, otherwise only the tag will be added.
 
+**skipSync**: `boolean`, Set true if a site isn't eligible for Sync (e.g. if addSite was triggered by Sync)
+
 
 
 ### clearHistory() 
@@ -96,7 +98,7 @@ Clears history (all sites without tags). Indirectly called by appActions.onClear
 
 
 
-### removeSite(siteDetail, tag) 
+### removeSite(siteDetail, tag, skipSync) 
 
 Removes a site from the site list
 
@@ -105,6 +107,8 @@ Removes a site from the site list
 **siteDetail**: `Object`, Properties of the site in question
 
 **tag**: `string`, A tag to associate with the site. e.g. bookmarks.
+
+**skipSync**: `boolean`, Set true if a site isn't eligible for Sync (e.g. if this removal was triggered by Sync)
 
 
 
@@ -287,7 +291,7 @@ Changes an application level setting
 
 
 
-### changeSiteSetting(hostPattern, key, value, temp) 
+### changeSiteSetting(hostPattern, key, value, temp, skipSync) 
 
 Change a hostPattern's config
 
@@ -302,9 +306,11 @@ Change a hostPattern's config
 **temp**: `boolean`, Whether to change temporary or persistent
   settings. defaults to false (persistent).
 
+**skipSync**: `boolean`, Set true if a site isn't eligible for Sync (e.g. if addSite was triggered by Sync)
 
 
-### removeSiteSetting(hostPattern, key, temp) 
+
+### removeSiteSetting(hostPattern, key, temp, skipSync) 
 
 Removes a site setting
 
@@ -316,6 +322,8 @@ Removes a site setting
 
 **temp**: `boolean`, Whether to change temporary or persistent
   settings. defaults to false (persistent).
+
+**skipSync**: `boolean`, Set true if a site isn't eligible for Sync (e.g. if addSite was triggered by Sync)
 
 
 
@@ -329,6 +337,16 @@ Updates ledger information for the payments pane
 
 
 
+### updateLocationInfo(locationInfo) 
+
+Updates location information for the URL bar
+
+**Parameters**
+
+**locationInfo**: `object`, the current location synopsis
+
+
+
 ### updatePublisherInfo(publisherInfo) 
 
 Updates publisher information for the payments pane
@@ -339,33 +357,33 @@ Updates publisher information for the payments pane
 
 
 
-### showMessageBox(detail) 
+### showNotification(detail) 
 
-Shows a message box in the notification bar
-
-**Parameters**
-
-**detail**: `Object`, Shows a message box in the notification bar
-
-
-
-### hideMessageBox(message) 
-
-Hides a message box in the notification bar
+Shows a message in the notification bar
 
 **Parameters**
 
-**message**: `string`, Hides a message box in the notification bar
+**detail**: `Object`, Shows a message in the notification bar
 
 
 
-### clearMessageBoxes(origin) 
+### hideNotification(message) 
 
-Clears all message boxes for a given origin.
+Hides a message in the notification bar
 
 **Parameters**
 
-**origin**: `string`, Clears all message boxes for a given origin.
+**message**: `string`, Hides a message in the notification bar
+
+
+
+### clearNotifications(origin) 
+
+Clears all notifications for a given origin.
+
+**Parameters**
+
+**origin**: `string`, Clears all notifications for a given origin.
 
 
 
@@ -620,6 +638,18 @@ Dispatches a message when a download is being redownloaded
 
 
 
+### showDownloadDeleteConfirmation() 
+
+Shows delete confirmation bar in download item panel
+
+
+
+### hideDownloadDeleteConfirmation() 
+
+Hides delete confirmation bar in download item panel
+
+
+
 ### clipboardTextCopied(text) 
 
 Dispatches a message when text is updated to the clipboard
@@ -627,6 +657,16 @@ Dispatches a message when text is updated to the clipboard
 **Parameters**
 
 **text**: `string`, clipboard text which is copied
+
+
+
+### toggleDevTools(tabId) 
+
+Dispatches a message to toogle the dev tools on/off for the specified tabId
+
+**Parameters**
+
+**tabId**: `number`, The tabId
 
 
 
@@ -639,6 +679,116 @@ Dispatches a message when a tab is being cloned
 **tabId**: `number`, The tabId of the tab to clone
 
 **options**: `object`, object containing options such as acive, back, and forward booleans
+
+
+
+### noScriptExceptionsAdded(hostPattern, origins) 
+
+Dispatches a message when noscript exceptions are added for an origin
+
+**Parameters**
+
+**hostPattern**: `string`, Dispatches a message when noscript exceptions are added for an origin
+
+**origins**: `Object.&lt;string, (boolean|number)&gt;`, Dispatches a message when noscript exceptions are added for an origin
+
+
+
+### setObjectId(objectId, objectPath) 
+
+Dispatches a message to set objectId for a syncable object.
+
+**Parameters**
+
+**objectId**: `Array.&lt;number&gt;`, Dispatches a message to set objectId for a syncable object.
+
+**objectPath**: `Array.&lt;string&gt;`, Dispatches a message to set objectId for a syncable object.
+
+
+
+### saveSyncInitData(seed, deviceId, lastFetchTimestamp, seedQr) 
+
+Dispatches a message when sync init data needs to be saved
+
+**Parameters**
+
+**seed**: `Array.&lt;number&gt; | null`, Dispatches a message when sync init data needs to be saved
+
+**deviceId**: `Array.&lt;number&gt; | null`, Dispatches a message when sync init data needs to be saved
+
+**lastFetchTimestamp**: `number | null`, Dispatches a message when sync init data needs to be saved
+
+**seedQr**: `string`, Dispatches a message when sync init data needs to be saved
+
+
+
+### applySiteRecords(records) 
+
+Dispatches a message to apply a batch of site records from Brave Sync
+TODO: Refactor this to merge it into addSite/removeSite
+
+**Parameters**
+
+**records**: `Array.&lt;Object&gt;`, Dispatches a message to apply a batch of site records from Brave Sync
+TODO: Refactor this to merge it into addSite/removeSite
+
+
+
+### resetSyncData() 
+
+Dispatches a message to delete sync data.
+
+
+
+### tabMessageBoxDismissed(tabId, detail) 
+
+Close a tab's open alert/confirm/etc (triggered by clicking OK/cancel).
+
+**Parameters**
+
+**tabId**: `number`, The tabId
+
+**detail**: `Object`, Object containing: suppressCheckbox (boolean)
+
+
+
+### tabMessageBoxUpdated(tabId, detail) 
+
+Update the detail object for the open alert/confirm/prompt (triggers re-render)
+
+**Parameters**
+
+**tabId**: `number`, The tabId
+
+**detail**: `Object`, Replacement object
+
+
+
+### navigatorHandlerRegistered(partition, protocol, location) 
+
+Action triggered by registering navigation handler
+
+**Parameters**
+
+**partition**: `string`, session partition
+
+**protocol**: `string`, navigator protocol
+
+**location**: `string`, location where handler was triggered
+
+
+
+### navigatorHandlerUnregistered(partition, protocol, location) 
+
+Action triggered by un-registering navigation handler
+
+**Parameters**
+
+**partition**: `string`, session partition
+
+**protocol**: `string`, navigator protocol
+
+**location**: `string`, location where handler was triggered
 
 
 

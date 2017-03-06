@@ -19,6 +19,17 @@
       addChangeListener - called when tabs render or gain focus
  */
 
+/* internal terminology:
+
+   blockedP: the user has selected 'Never include this site' (site setting 'ledgerPaymentsShown')
+    stickyP: the user has toggled ON the button to the right of the address bar (site setting 'ledgerPayments')
+   excluded: the publisher appears on the list of sites to exclude from automatic inclusion (if auto-include is enabled)
+
+  eligibleP: the current scorekeeper says the publisher has received enough durable visits
+   visibleP: (stickyP OR (!excluded AND eligibleP)) AND !blockedP
+contributeP: (stickyP OR !excluded) AND eligibleP   AND !blockedP
+ */
+
 const crypto = require('crypto')
 const fs = require('fs')
 const os = require('os')
@@ -33,13 +44,14 @@ const ipc = electron.ipcMain
 const session = electron.session
 
 const acorn = require('acorn')
+const levelup = require('level')
+const moment = require('moment')
 const qr = require('qr-image')
 const querystring = require('querystring')
 const random = require('random-lib')
 const tldjs = require('tldjs')
 const underscore = require('underscore')
 const uuid = require('node-uuid')
-const moment = require('moment')
 
 const appActions = require('../js/actions/appActions')
 const appConfig = require('../js/constants/appConfig')
@@ -85,6 +97,12 @@ const clientOptions = { debugP: process.env.LEDGER_DEBUG,
                       }
 
 var doneTimer
+
+var v2RulesetDB
+const v2RulesetPath = 'ledger-rulesV2.leveldb'
+
+var v2PublishersDB
+const v2PublishersPath = 'ledger-publishersV2.leveldb'
 
 /*
  * publisher globals
@@ -135,6 +153,10 @@ const doAction = (action) => {
   }
 
   switch (action.actionType) {
+    case appConstants.APP_SHUTTING_DOWN:
+      quit()
+      break
+
     case appConstants.APP_IDLE_STATE_CHANGED:
       visit('NOOP', underscore.now(), null)
       break
@@ -188,8 +210,8 @@ const doAction = (action) => {
         if (!synopsis.publishers[publisher]) break
 
         if (publisherInfo._internal.verboseP) console.log('\nupdating ' + publisher + ' stickyP=' + action.value)
-        synopsis.publishers[publisher].options.stickyP = action.value
         updatePublisherInfo()
+        verifiedP(publisher)
       }
       break
 
@@ -202,13 +224,22 @@ const doAction = (action) => {
         if (!synopsis.publishers[publisher]) break
 
         if (publisherInfo._internal.verboseP) console.log('\nupdating ' + publisher + ' stickyP=' + true)
-        synopsis.publishers[publisher].options.stickyP = true
         updatePublisherInfo()
       }
       break
 
     case appConstants.APP_NETWORK_CONNECTED:
       setTimeout(networkConnected, 1 * msecs.second)
+      break
+
+    case appConstants.APP_NAVIGATOR_HANDLER_REGISTERED:
+      ledgerInfo.hasBitcoinHandler = (action.protocol === 'bitcoin')
+      appActions.updateLedgerInfo(underscore.omit(ledgerInfo, [ '_internal' ]))
+      break
+
+    case appConstants.APP_NAVIGATOR_HANDLER_UNREGISTERED:
+      ledgerInfo.hasBitcoinHandler = false
+      appActions.updateLedgerInfo(underscore.omit(ledgerInfo, [ '_internal' ]))
       break
 
     default:
@@ -364,16 +395,14 @@ var recoverKeys = (appState, action) => {
 
   const UUID_REGEX = /^[0-9a-z]{8}\-[0-9a-z]{4}\-[0-9a-z]{4}\-[0-9a-z]{4}\-[0-9a-z]{12}$/
   if (typeof firstRecoveryKey !== 'string' || !firstRecoveryKey.match(UUID_REGEX) || typeof secondRecoveryKey !== 'string' || !secondRecoveryKey.match(UUID_REGEX)) {
-    setImmediate(() => {
-      // calling logError sets the error object
-      logError(true, 'recoverKeys')
-      appActions.updateLedgerInfo(underscore.omit(ledgerInfo, [ '_internal' ]))
-      appActions.ledgerRecoveryFailed()
-    })
+    // calling logError sets the error object
+    logError(true, 'recoverKeys')
+    appActions.updateLedgerInfo(underscore.omit(ledgerInfo, [ '_internal' ]))
+    appActions.ledgerRecoveryFailed()
     return appState
   }
 
-  client.recoverWallet(firstRecoveryKey, secondRecoveryKey, (err, body) => {
+  client.recoverWallet(firstRecoveryKey, secondRecoveryKey, (err, result) => {
     let existingLedgerError = ledgerInfo.error
 
     if (logError(err, 'recoveryWallet')) {
@@ -382,12 +411,14 @@ var recoverKeys = (appState, action) => {
       // logError sets ledgerInfo.error, so we must we clear it or UI will show an error
       ledgerInfo.error = existingLedgerError
       appActions.updateLedgerInfo(underscore.omit(ledgerInfo, [ '_internal' ]))
-      setImmediate(() => appActions.ledgerRecoveryFailed())
+      appActions.ledgerRecoveryFailed()
     } else {
+      callback(err, result)
+
       appActions.updateLedgerInfo(underscore.omit(ledgerInfo, [ '_internal' ]))
       if (balanceTimeoutId) clearTimeout(balanceTimeoutId)
       getBalance()
-      setImmediate(() => appActions.ledgerRecoverySucceeded())
+      appActions.ledgerRecoverySucceeded()
     }
   })
 
@@ -424,21 +455,16 @@ var promptForRecoveryKeyFile = () => {
  */
 
 if (ipc) {
+  ipc.on(messages.LEDGER_CREATE_WALLET, () => {
+    boot()
+  })
+
   ipc.on(messages.LEDGER_PAYMENTS_PRESENT, (event, presentP) => {
     if (presentP) {
       if (!balanceTimeoutId) getBalance()
     } else if (balanceTimeoutId) {
       clearTimeout(balanceTimeoutId)
       balanceTimeoutId = false
-    }
-  })
-
-  ipc.on(messages.CHECK_BITCOIN_HANDLER, (event, partition) => {
-    const protocolHandler = session.fromPartition(partition).protocol
-    // TODO: https://github.com/brave/browser-laptop/issues/3625
-    if (typeof protocolHandler.isNavigatorProtocolHandled === 'function') {
-      ledgerInfo.hasBitcoinHandler = protocolHandler.isNavigatorProtocolHandled('bitcoin')
-      appActions.updateLedgerInfo(underscore.omit(ledgerInfo, [ '_internal' ]))
     }
   })
 
@@ -470,7 +496,7 @@ if (ipc) {
   ipc.on(messages.NOTIFICATION_RESPONSE, (e, message, buttonIndex) => {
     const win = electron.BrowserWindow.getFocusedWindow()
     if (message === addFundsMessage) {
-      appActions.hideMessageBox(message)
+      appActions.hideNotification(message)
       // See showNotificationAddFunds() for buttons.
       // buttonIndex === 1 is "Later"; the timestamp until which to delay is set
       // in showNotificationAddFunds() when triggering this notification.
@@ -484,7 +510,7 @@ if (ipc) {
         }
       }
     } else if (message === reconciliationMessage) {
-      appActions.hideMessageBox(message)
+      appActions.hideNotification(message)
       // buttonIndex === 1 is Dismiss
       if (buttonIndex === 0) {
         appActions.changeSetting(settings.PAYMENTS_NOTIFICATIONS, false)
@@ -493,12 +519,12 @@ if (ipc) {
           'about:preferences#payments', { singleFrame: true })
       }
     } else if (message === notificationPaymentDoneMessage) {
-      appActions.hideMessageBox(message)
+      appActions.hideNotification(message)
       if (buttonIndex === 0) {
         appActions.changeSetting(settings.PAYMENTS_NOTIFICATIONS, false)
       }
     } else if (message === notificationTryPaymentsMessage) {
-      appActions.hideMessageBox(message)
+      appActions.hideNotification(message)
       if (buttonIndex === 1 && win) {
         win.webContents.send(messages.SHORTCUT_NEW_FRAME,
           'about:preferences#payments', { singleFrame: true })
@@ -532,6 +558,7 @@ underscore.keys(fileTypes).forEach((fileType) => {
 signatureMax = Math.ceil(signatureMax * 1.5)
 
 eventStore.addChangeListener(() => {
+  var initP
   const eventState = eventStore.getState().toJS()
   var view = eventState.page_view
   var info = eventState.page_info
@@ -541,32 +568,38 @@ eventStore.addChangeListener(() => {
 
 // NB: in theory we have already seen every element in info except for (perhaps) the last one...
   underscore.rest(info, info.length - 1).forEach((page) => {
-    var entry, faviconURL, pattern, publisher, siteSetting
+    var entry, faviconURL, pattern, publisher
     var location = page.url
 
-    if ((location.match(/^about/)) || ((locations[location]) && (locations[location].publisher))) return
+    if (location.match(/^about/)) return
+
+    location = urlFormat(underscore.pick(urlParse(location), [ 'protocol', 'host', 'hostname', 'port', 'pathname' ]))
+    publisher = locations[location] && locations[location].publisher
+    if (publisher) return updateLocation(location, publisher)
 
     if (!page.publisher) {
       try {
-        publisher = ledgerPublisher.getPublisher(location)
-        if (publisher) {
-          siteSetting = appStore.getState().get('siteSettings').get(`https?://${publisher}`)
-          if ((siteSetting) && (siteSetting.get('ledgerPaymentsShown') === false)) publisher = null
-        }
+        publisher = ledgerPublisher.getPublisher(location, publisherInfo._internal.ruleset.raw)
+        if ((publisher) && (blockedP(publisher))) publisher = null
         if (publisher) page.publisher = publisher
       } catch (ex) {
         console.log('getPublisher error for ' + location + ': ' + ex.toString())
       }
     }
-    locations[location] = underscore.omit(page, [ 'url' ])
+    locations[location] = underscore.omit(page, [ 'url', 'protocol', 'faviconURL' ])
     if (!page.publisher) return
 
     publisher = page.publisher
     pattern = `https?://${publisher}`
-    if ((!synopsis.publishers[publisher]) && (!getSetting(settings.AUTO_SUGGEST_SITES))) {
-      appActions.changeSiteSetting(pattern, 'ledgerPayments', false)
-    }
+    initP = !synopsis.publishers[publisher]
     synopsis.initPublisher(publisher)
+    if ((initP) && (getSetting(settings.AUTO_SUGGEST_SITES))) {
+      excludeP(publisher, (unused, exclude) => {
+        appActions.changeSiteSetting(pattern, 'ledgerPayments', !exclude)
+        updatePublisherInfo()
+      })
+    }
+    updateLocation(location, publisher)
     entry = synopsis.publishers[publisher]
     if ((page.protocol) && (!entry.protocol)) entry.protocol = page.protocol
 
@@ -647,12 +680,14 @@ eventStore.addChangeListener(() => {
  */
 
 var initialize = (paymentsEnabled) => {
+  var ruleset
+
+  if (!v2RulesetDB) v2RulesetDB = levelup(pathName(v2RulesetPath))
+  if (!v2PublishersDB) v2PublishersDB = levelup(pathName(v2PublishersPath))
   enable(paymentsEnabled)
 
   // Check if relevant browser notifications should be shown every 15 minutes
-  if (notificationTimeout) {
-    clearInterval(notificationTimeout)
-  }
+  if (notificationTimeout) clearInterval(notificationTimeout)
   notificationTimeout = setInterval(showNotifications, 15 * msecs.minute)
 
   if (!paymentsEnabled) {
@@ -662,7 +697,9 @@ var initialize = (paymentsEnabled) => {
   if (client) return
 
   if (!ledgerPublisher) ledgerPublisher = require('ledger-publisher')
-  cacheRuleSet(ledgerPublisher.rules)
+  ruleset = []
+  ledgerPublisher.ruleset.forEach(rule => { if (rule.consequent) ruleset.push(rule) })
+  cacheRuleSet(ruleset)
 
   fs.access(pathName(statePath), fs.FF_OK, (err) => {
     if (!err) {
@@ -711,6 +748,8 @@ var initialize = (paymentsEnabled) => {
 
         // speed-up browser start-up by delaying the first synchronization action
         setTimeout(() => {
+          if (!client) return
+
           if (client.sync(callback) === true) run(random.randomInt({ min: msecs.minute, max: 10 * msecs.minute }))
           cacheRuleSet(state.ruleset)
         }, 3 * msecs.second)
@@ -747,8 +786,7 @@ var enable = (paymentsEnabled) => {
   synopsis = new (ledgerPublisher.Synopsis)()
   fs.readFile(pathName(synopsisPath), (err, data) => {
     var initSynopsis = () => {
-      var updateP, value
-      var siteSettings = appStore.getState().get('siteSettings')
+      var value
 
       // cf., the `Synopsis` constructor, https://github.com/brave/ledger-publisher/blob/master/index.js#L167
       value = getSetting(settings.MINIMUM_VISIT_TIME)
@@ -761,7 +799,7 @@ var enable = (paymentsEnabled) => {
 
       value = getSetting(settings.MINIMUM_VISITS)
       if (!value) {
-        value = 5
+        value = 1
         appActions.changeSetting(settings.MINIMUM_VISITS, value)
       }
       if (value > 0) synopsis.options.minPublisherVisits = value
@@ -783,16 +821,11 @@ var enable = (paymentsEnabled) => {
       }
 
       underscore.keys(synopsis.publishers).forEach((publisher) => {
-        var siteSetting
-
-        if (typeof synopsis.publishers[publisher].options.stickyP !== 'undefined') return
-
-        updateP = true
-        siteSetting = siteSettings.get(`https?://${publisher}`)
-        synopsis.publishers[publisher].options.stickyP = siteSetting && siteSetting.get('ledgerPayments')
+        excludeP(publisher)
+        verifiedP(publisher)
       })
 
-      if (updateP) updatePublisherInfo()
+      updatePublisherInfo()
     }
 
     if (publisherInfo._internal.verboseP) console.log('\nstarting up ledger publisher integration')
@@ -831,6 +864,7 @@ var enable = (paymentsEnabled) => {
           entries.forEach((entry) => {
             locations[entry.location] = entry
             publishers[publisher][entry.location] = { timestamp: entry.when, tabIds: [] }
+            updateLocation(entry.location, publisher)
           })
         })
       } catch (ex) {
@@ -838,6 +872,47 @@ var enable = (paymentsEnabled) => {
       }
     })
   })
+}
+
+/*
+ * update location information
+ */
+
+var updateLocationInfo = (location) => {
+  appActions.updateLocationInfo(locations)
+}
+
+var updateLocation = (location, publisher) => {
+  var updateP
+
+  if (typeof locations[location].stickyP === 'undefined') locations[location].stickyP = stickyP(publisher)
+  if (typeof locations[location].verified !== 'undefined') return
+
+  if (synopsis && synopsis.publishers[publisher] && (typeof synopsis.publishers[publisher].options.verified !== 'undefined')) {
+    locations[location].verified = synopsis.publishers[publisher].options.verified || false
+    updateP = true
+  } else {
+    verifiedP(publisher, (err, result) => {
+      if ((err) && (!err.notFound)) return
+
+      locations[location].verified = (result && result.verified) || false
+      updateLocationInfo(location)
+    })
+  }
+
+  if (synopsis && synopsis.publishers[publisher] && (typeof synopsis.publishers[publisher].options.exclude !== 'undefined')) {
+    locations[location].exclude = synopsis.publishers[publisher].options.exclude || false
+    updateP = true
+  } else {
+    excludeP(publisher, (err, result) => {
+      if ((err) && (!err.notFound)) return
+
+      locations[location].exclude = (result && result.exclude) || false
+      updateLocationInfo(location)
+    })
+  }
+
+  if (updateP) updateLocationInfo(location)
 }
 
 /*
@@ -892,6 +967,46 @@ var updatePublisherInfo = () => {
   appActions.updatePublisherInfo(underscore.omit(publisherInfo, [ '_internal' ]))
 }
 
+var blockedP = (publisher) => {
+  var siteSetting = appStore.getState().get('siteSettings').get(`https?://${publisher}`)
+
+  return ((!!siteSetting) && (siteSetting.get('ledgerPaymentsShown') === false))
+}
+
+var stickyP = (publisher) => {
+  var siteSettings = appStore.getState().get('siteSettings')
+  var pattern = `https?://${publisher}`
+  var siteSetting = siteSettings.get(pattern)
+  var result = (siteSetting) && (siteSetting.get('ledgerPayments'))
+
+  // NB: legacy clean-up
+  if ((typeof result === 'undefined') && (typeof synopsis.publishers[publisher].options.stickyP !== 'undefined')) {
+    result = synopsis.publishers[publisher].options.stickyP
+    appActions.changeSiteSetting(pattern, 'ledgerPayments', result)
+  }
+  delete synopsis.publishers[publisher].options.stickyP
+
+  return (result || false)
+}
+
+var eligibleP = (publisher) => {
+  return ((synopsis.publishers[publisher].scores[synopsis.options.scorekeeper] > 0) &&
+          (synopsis.publishers[publisher].duration >= synopsis.options.minPublisherDuration) &&
+          (synopsis.publishers[publisher].visits >= synopsis.options.minPublisherVisits))
+}
+
+var visibleP = (publisher) => {
+  return (((stickyP(publisher)) ||
+           ((synopsis.publishers[publisher].options.exclude !== true) && (eligibleP(publisher)))) &&
+          (!blockedP(publisher)))
+}
+
+var contributeP = (publisher) => {
+  return (((stickyP(publisher)) || (synopsis.publishers[publisher].options.exclude !== true)) &&
+          (eligibleP(publisher)) &&
+          (!blockedP(publisher)))
+}
+
 var synopsisNormalizer = () => {
   var i, duration, minP, n, pct, publisher, results, total
   var data = []
@@ -899,11 +1014,7 @@ var synopsisNormalizer = () => {
 
   results = []
   underscore.keys(synopsis.publishers).forEach((publisher) => {
-    if ((getSetting(settings.AUTO_SUGGEST_SITES)) && (!synopsis.publishers[publisher].options.stickyP)) {
-      if ((synopsis.publishers[publisher].scores[scorekeeper] <= 0) ||
-          (synopsis.options.minPublisherDuration > synopsis.publishers[publisher].duration) ||
-          (synopsis.options.minPublisherVisits > synopsis.publishers[publisher].visits)) return
-    }
+    if (!visibleP(publisher)) return
 
     results.push(underscore.extend({ publisher: publisher }, underscore.omit(synopsis.publishers[publisher], 'window')))
   }, synopsis)
@@ -921,7 +1032,7 @@ var synopsisNormalizer = () => {
 
     data[i] = {
       rank: i + 1,
-      verified: (ledgerInfo._internal.verifiedPublishers || []).indexOf(results[i].publisher) !== -1,
+      verified: results[i].options.verified || false,
       site: results[i].publisher,
       views: results[i].visits,
       duration: duration,
@@ -1021,6 +1132,7 @@ var visit = (location, timestamp, tabId) => {
     }
     synopsis.addPublisher(publisher, { duration: duration, revisitP: revisitP })
     updatePublisherInfo()
+    verifiedP(publisher)
   }
 
   setLocation()
@@ -1090,6 +1202,100 @@ var cacheRuleSet = (ruleset) => {
   } catch (ex) {
     console.log('ruleset error: ' + ex.toString() + '\n' + ex.stack)
   }
+}
+
+var excludeP = (publisher, callback) => {
+  var doneP
+
+  var done = (err, result) => {
+    doneP = true
+    if ((!err) && (typeof result !== 'undefined') && (!!synopsis.publishers[publisher]) &&
+        (synopsis.publishers[publisher].options.exclude !== result)) {
+      synopsis.publishers[publisher].options.exclude = result
+      updatePublisherInfo()
+    }
+
+    if (callback) callback(err, result)
+  }
+
+  inspectP(v2RulesetDB, v2RulesetPath, publisher, 'exclude', 'domain:' + publisher, (err, result) => {
+    var props
+
+    if (!err) return done(err, result.exclude)
+
+    props = ledgerPublisher.getPublisherProps('https://' + publisher)
+    if (!props) return done()
+
+    v2RulesetDB.createReadStream({ lt: 'domain:' }).on('data', (data) => {
+      var regexp, result, sldP, tldP
+
+      if (doneP) return
+
+      sldP = data.key.indexOf('SLD:') !== 0
+      tldP = data.key.indexOf('TLD:') !== 0
+      if ((!tldP) && (!sldP)) return
+
+      if (underscore.intersection(data.key.split(''),
+                                   [ '^', '$', '*', '+', '?', '[', '(', '{', '|' ]).length === 0) {
+        if ((data.key !== ('TLD:' + props.TLD)) && (data.key !== ('SLD:' + props.SLD.split('.')[0]))) return
+      } else {
+        try {
+          regexp = new RegExp(data.key.substr(4))
+          if (!regexp.test(props[tldP ? 'TLD' : 'SLD'])) return
+        } catch (ex) {
+          console.log(v2RulesetPath + ' stream invalid regexp ' + data.key + ': ' + ex.toString())
+        }
+      }
+
+      try {
+        result = JSON.parse(data.value)
+      } catch (ex) {
+        console.log(v2RulesetPath + ' stream invalid JSON ' + data.entry + ': ' + data.value)
+      }
+
+      done(null, result.exclude)
+    }).on('error', (err) => {
+      console.log(v2RulesetPath + ' stream error: ' + JSON.stringify(err, null, 2))
+    }).on('close', () => {
+    }).on('end', () => {
+      if (!doneP) done(null, false)
+    })
+  })
+}
+
+var verifiedP = (publisher, callback) => {
+  inspectP(v2PublishersDB, v2PublishersPath, publisher, 'verified', null, callback)
+}
+
+var inspectP = (db, path, publisher, property, key, callback) => {
+  var done = (err, result) => {
+    if ((!err) && (typeof result !== 'undefined') && (!!synopsis.publishers[publisher]) &&
+        (synopsis.publishers[publisher].options[property] !== result[property])) {
+      synopsis.publishers[publisher].options[property] = result[property]
+      updatePublisherInfo()
+    }
+
+    if (callback) callback(err, result)
+  }
+
+  if (!key) key = publisher
+  db.get(key, (err, value) => {
+    var result
+
+    if (err) {
+      if (!err.notFound) console.log(path + ' get ' + key + ' error: ' + JSON.stringify(err, null, 2))
+      return done(err)
+    }
+
+    try {
+      result = JSON.parse(value)
+    } catch (ex) {
+      console.log(v2RulesetPath + ' stream invalid JSON ' + key + ': ' + value)
+      result = {}
+    }
+
+    done(null, result)
+  })
 }
 
 /*
@@ -1165,7 +1371,6 @@ var ledgerInfo = {
   exchangeInfo: undefined,
 
   _internal: {
-    verifiedPublishers: [],
     exchangeExpiry: 0,
     exchanges: {},
     geoipExpiry: 0
@@ -1234,7 +1439,7 @@ var updateLedgerInfo = () => {
 var logs = []
 
 var callback = (err, result, delayTime) => {
-  var i, then
+  var i, results, then
   var entries = client && client.report()
   var now = underscore.now()
 
@@ -1270,6 +1475,44 @@ var callback = (err, result, delayTime) => {
     getPaymentInfo()
   }
   cacheRuleSet(result.ruleset)
+  if (result.rulesetV2) {
+    results = result.rulesetV2
+    delete result.rulesetV2
+
+    entries = []
+    results.forEach((entry) => {
+      entries.push({ type: 'put',
+                     key: entry.facet + ':' + entry.publisher,
+                     value: JSON.stringify(underscore.omit(entry, [ 'facet', 'publisher' ]))
+                   })
+    })
+
+    v2RulesetDB.batch(entries, (err) => {
+      if (err) return console.log(v2RulesetPath + ' error: ' + JSON.stringify(err, null, 2))
+
+      underscore.keys(synopsis.publishers).forEach((publisher) => { excludeP(publisher) })
+    })
+  }
+  if (result.publishersV2) {
+    results = result.publishersV2
+    delete result.publishersV2
+
+    entries = []
+    results.forEach((entry) => {
+      entries.push({ type: 'put',
+                     key: entry.publisher,
+                     value: JSON.stringify(underscore.omit(entry, [ 'publisher' ]))
+                   })
+      if ((synopsis.publishers[entry.publisher]) &&
+          (synopsis.publishers[entry.publisher].options.verified !== entry.verified)) {
+        synopsis.publishers[entry.publisher].options.verified = entry.verified
+        updatePublisherInfo()
+      }
+    })
+    v2PublishersDB.batch(entries, (err) => {
+      if (err) return console.log(v2PublishersPath + ' error: ' + JSON.stringify(err, null, 2))
+    })
+  }
 
   atomicWriter(pathName(statePath), result, { flushP: true }, () => {})
   run(delayTime)
@@ -1347,23 +1590,60 @@ var roundtrip = (params, options, callback) => {
 var runTimeoutId = false
 
 var run = (delayTime) => {
-  if (clientOptions.verboseP) console.log('\nledger client run: clientP=' + (!!client) + ' delayTime=' + delayTime)
+  if (clientOptions.verboseP) {
+    var entries
+
+    console.log('\nledger client run: clientP=' + (!!client) + ' delayTime=' + delayTime)
+
+    var line = (fields) => {
+      var result = ''
+
+      fields.forEach((field) => {
+        var spaces
+        var max = (result.length > 0) ? 9 : 19
+
+        if (typeof field !== 'string') field = field.toString()
+        if (field.length < max) {
+          spaces = ' '.repeat(max - field.length)
+          field = spaces + field
+        } else {
+          field = field.substr(0, max)
+        }
+        result += ' ' + field
+      })
+
+      console.log(result.substr(1))
+    }
+
+    line([ 'publisher',
+           'blockedP', 'stickyP', 'verified',
+           'excluded', 'eligibleP', 'visibleP',
+           'contribP',
+           'duration', 'visits'
+         ])
+    entries = synopsis.topN() || []
+    entries.forEach((entry) => {
+      var publisher = entry.publisher
+
+      line([ publisher,
+             blockedP(publisher), stickyP(publisher), synopsis.publishers[publisher].options.verified === true,
+             synopsis.publishers[publisher].options.exclude === true, eligibleP(publisher), visibleP(publisher),
+             contributeP(publisher),
+             Math.round(synopsis.publishers[publisher].duration / 1000), synopsis.publishers[publisher].visits ])
+    })
+  }
 
   if ((typeof delayTime === 'undefined') || (!client)) return
 
   var active, state
   var ballots = client.ballots()
-  var siteSettings = appStore.getState().get('siteSettings')
   var winners = ((synopsis) && (ballots > 0) && (synopsis.winners(ballots))) || []
 
   try {
     winners.forEach((winner) => {
       var result
-      var siteSetting = siteSettings.get(`https?://${winner}`)
 
-      if ((siteSetting) &&
-          (siteSetting.get('ledgerPayments') === false ||
-           siteSetting.get('ledgerPaymentsShown') === false)) return
+      if (!contributeP(winner)) return
 
       result = client.vote(winner)
       if (result) state = result
@@ -1424,11 +1704,6 @@ var getStateInfo = (state) => {
   if (info) {
     ledgerInfo._internal.paymentInfo = info
     cacheReturnValue()
-  }
-
-  if (!underscore.isEqual(ledgerInfo._internal.verifiedPublishers, state.verifiedPublishers)) {
-    ledgerInfo._internal.verifiedPublishers = state.verifiedPublishers
-    updatePublisherInfo()
   }
 
   ledgerInfo.transactions = []
@@ -1654,7 +1929,7 @@ var atomicWriter = (path, obj, options, cb) => {
     delete syncingP[path]
     if (typeof deferred === 'object') {
       if (ledgerInfo._internal.debugP) console.log('\nrestarting ' + path)
-      atomicWriter(path, deferred.obj, deferred.options, deferred.cb)
+      return atomicWriter(path, deferred.obj, deferred.options, deferred.cb)
     }
 
     if (err) {
@@ -1709,7 +1984,7 @@ const showDisabledNotifications = () => {
       return
     }
     notificationTryPaymentsMessage = locale.translation('notificationTryPayments')
-    appActions.showMessageBox({
+    appActions.showNotification({
       greeting: locale.translation('updateHello'),
       message: notificationTryPaymentsMessage,
       buttons: [
@@ -1767,7 +2042,7 @@ const showNotificationAddFunds = () => {
   appActions.changeSetting(settings.PAYMENTS_NOTIFICATION_ADD_FUNDS_TIMESTAMP, nextTime)
 
   addFundsMessage = addFundsMessage || locale.translation('addFundsNotification')
-  appActions.showMessageBox({
+  appActions.showNotification({
     greeting: locale.translation('updateHello'),
     message: addFundsMessage,
     buttons: [
@@ -1791,7 +2066,7 @@ const showNotificationReviewPublishers = (nextTime) => {
   appActions.changeSetting(settings.PAYMENTS_NOTIFICATION_RECONCILE_SOON_TIMESTAMP, nextTime)
 
   reconciliationMessage = reconciliationMessage || locale.translation('reconciliationNotification')
-  appActions.showMessageBox({
+  appActions.showNotification({
     greeting: locale.translation('updateHello'),
     message: reconciliationMessage,
     buttons: [
@@ -1812,8 +2087,8 @@ const showNotificationPaymentDone = (transactionContributionFiat) => {
     .replace(/{{\s*amount\s*}}/, transactionContributionFiat.amount)
     .replace(/{{\s*currency\s*}}/, transactionContributionFiat.currency)
   // Hide the 'waiting for deposit' message box if it exists
-  appActions.hideMessageBox(addFundsMessage)
-  appActions.showMessageBox({
+  appActions.hideNotification(addFundsMessage)
+  appActions.showNotification({
     greeting: locale.translation('updateHello'),
     message: notificationPaymentDoneMessage,
     buttons: [

@@ -40,6 +40,11 @@ function getActiveFrameIndex (windowState) {
   return getFrameIndex(windowState, windowState.get('activeFrameKey'))
 }
 
+function getActiveFrameTabId (windowState) {
+  const activeFrame = getActiveFrame(windowState)
+  return activeFrame && activeFrame.get('tabId')
+}
+
 function getFrameByIndex (windowState, i) {
   return windowState.getIn(['frames', i])
 }
@@ -469,9 +474,6 @@ function removeFrame (frames, tabs, closedFrames, frameProps, activeFrameKey, fr
       case tabCloseAction.NEXT:
         activeFrameIndex = ((frames.count() - 1) === framePropsIndex) ? (framePropsIndex - 1) : framePropsIndex
         break
-      case tabCloseAction.FIRST:
-        activeFrameIndex = 0
-        break
       // Default is a parent tab
       default:
         let parentFrameIndex = findIndexForFrameKey(frames, frameProps.get('parentFrameKey'))
@@ -550,6 +552,7 @@ module.exports = {
   getFrameDisplayIndex,
   getActiveFrameIndex,
   getActiveFrameDisplayIndex,
+  getActiveFrameTabId,
   getFrameByIndex,
   getFrameByDisplayIndex,
   getFrameByKey,

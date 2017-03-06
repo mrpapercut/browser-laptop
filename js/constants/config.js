@@ -46,6 +46,7 @@ module.exports = {
   },
   braveExtensionId: 'mnojpmjdmbbfmejpflffifhffcmidifd',
   torrentExtensionId: 'fmdpfempfmekjkcfdehndghogpnpjeno',
+  syncExtensionId: 'cjnmeadmgmiihncdidmfiabhenbggfjm',
   PDFJSExtensionId: 'jdbefljfgobbmcidnmpjamcbhnbphjnb',
   PocketExtensionId: 'niloccemoadcdkdjlinkgdfekeahmflj',
   widevineComponentId: 'oimompecagnajdejgnnjijobebaeigek',
@@ -55,7 +56,7 @@ module.exports = {
       name: 'Bay Bridge',
       source: 'img/newtab_stock_image.jpg',
       author: 'Darrell Sano',
-      link: 'http://dksfoto.smugmug.com'
+      link: 'https://dksfoto.smugmug.com'
     }
   }
 }

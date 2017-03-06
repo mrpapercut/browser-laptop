@@ -15,7 +15,7 @@ describe('about:extensions', function () {
       .waitForBrowserWindow()
       .waitForVisible(urlInput)
       .windowByUrl(Brave.browserWindowUrl)
-      .waitForExist('.tab[data-frame-key="1"]')
+      .waitForExist('[data-test-id="tab"][data-frame-key="1"]')
       .tabByIndex(0)
       .url(aboutExtensionsUrl)
   }
@@ -91,7 +91,7 @@ describe('about:extensions', function () {
         .waitForVisible(`[data-extension-id="${extensionIds[passwordManagers.LAST_PASS]}"]`, extensionDownloadWaitTime)
     })
   })
-  describe.skip('Enpass installs when enabled', function () {
+  describe('Enpass installs when enabled', function () {
     Brave.beforeAll(this)
     before(function * () {
       yield setup(this.app.client)
@@ -103,6 +103,20 @@ describe('about:extensions', function () {
         .waitForVisible(`.extensionBrowserAction[data-button-value="${extensionIds[passwordManagers.ENPASS]}"]`)
         .tabByIndex(0)
         .waitForVisible(`[data-extension-id="${extensionIds[passwordManagers.ENPASS]}"]`, extensionDownloadWaitTime)
+    })
+  })
+  describe.skip('bitwarden installs when enabled', function () {
+    Brave.beforeAll(this)
+    before(function * () {
+      yield setup(this.app.client)
+    })
+    it('installs', function * () {
+      yield this.app.client
+        .windowByUrl(Brave.browserWindowUrl)
+        .changeSetting(settingsConst.ACTIVE_PASSWORD_MANAGER, passwordManagers.BITWARDEN)
+        .waitForVisible(`.extensionBrowserAction[data-button-value="${extensionIds[passwordManagers.BITWARDEN]}"]`)
+        .tabByIndex(0)
+        .waitForVisible(`[data-extension-id="${extensionIds[passwordManagers.BITWARDEN]}"]`, extensionDownloadWaitTime)
     })
   })
 })

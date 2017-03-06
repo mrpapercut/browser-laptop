@@ -25,6 +25,16 @@ describe('PaymentsTab component', function () {
     mockery.registerMock('../../less/button.less', {})
     mockery.registerMock('../../node_modules/font-awesome/css/font-awesome.css', {})
     mockery.registerMock('../../extensions/brave/img/caret_down_grey.svg', 'caret_down_grey.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_general.svg', 'browser_prefs_general.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_search.svg', 'browser_prefs_search.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_tabs.svg', 'browser_prefs_tabs.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_plugins.svg', 'browser_prefs_plugins.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_security.svg', 'browser_prefs_security.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_shields.svg', 'browser_prefs_shields.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_payments.svg', 'browser_prefs_payments.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_sync.svg', 'browser_prefs_sync.svg')
+    mockery.registerMock('../../../extensions/brave/img/preferences/browser_prefs_advanced.svg', 'browser_prefs_advanced.svg')
+
     mockery.registerMock('electron', fakeElectron)
     mockery.registerMock('../../../../js/settings', fakeSettings)
     fakeSettings.mockReturnValue = false
@@ -209,7 +219,7 @@ describe('PaymentsTab component', function () {
       assert.equal(wrapper.find('[data-test-id="durationSelector"]').node.value, 8000)
     })
 
-    it('defaults to 5 minimum publisher visits', function () {
+    it('defaults to 1 minimum publisher visit', function () {
       fakeSettings.mockReturnValue = true
       const wrapper = mount(
         <PaymentsTab
@@ -219,7 +229,7 @@ describe('PaymentsTab component', function () {
           ledgerData={Immutable.Map()} />
       )
       assert.equal(wrapper.find('.advancedSettings').length, 1)
-      assert.equal(wrapper.find('[data-test-id="visitSelector"]').node.value, 5)
+      assert.equal(wrapper.find('[data-test-id="visitSelector"]').node.value, 1)
     })
   })
 })

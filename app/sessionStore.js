@@ -27,7 +27,6 @@ const sessionStorageVersion = 1
 const filtering = require('./filtering')
 const autofill = require('./autofill')
 const {navigatableTypes} = require('../js/lib/appUrlUtil')
-// const tabState = require('./common/state/tabState')
 const Channel = require('./channel')
 const { makeImmutable } = require('./common/state/immutableUtil')
 const tabState = require('./common/state/tabState')
@@ -293,6 +292,8 @@ module.exports.cleanAppData = (data, isShutdown) => {
     if (typeof noScript === 'number') {
       delete data.siteSettings[host].noScript
     }
+    // Don't persist any noScript exceptions
+    delete data.siteSettings[host].noScriptExceptions
     // Don't write runInsecureContent to session
     delete data.siteSettings[host].runInsecureContent
     // If the site setting is empty, delete it for privacy
@@ -520,6 +521,9 @@ module.exports.loadAppState = () => {
 module.exports.defaultAppState = () => {
   return {
     firstRunTimestamp: new Date().getTime(),
+    sync: {
+      lastFetchTimestamp: 0
+    },
     sites: getTopSiteMap(),
     tabs: [],
     windows: [],

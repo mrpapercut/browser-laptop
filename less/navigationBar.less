@@ -37,9 +37,12 @@
   }
 
   #navigator {
-    input {
-      font-weight: 500;
-      margin: 1px 0 0 3px;
+    .urlbarForm {
+      input {
+        font-weight: 500;
+        margin: 0; // #5624
+        top: 0; // #5624
+      }
     }
   }
 
@@ -766,23 +769,6 @@
           background: url('../img/toolbar/bookmark_marked.svg') center no-repeat;
           background-size: 14px 14px;
         }
-      }
-    }
-
-    .addPublisherButtonContainer {
-      border-left: none;
-      border-top-left-radius: 0;
-      border-bottom-left-radius: 0;
-      border-bottom-color: rgba(0,0,0,0.1);
-
-      &.authorizedPublisher {
-        button {
-          color: @braveOrange
-        }
-      }
-
-      button {
-        font-size: 14px;
       }
     }
   }

@@ -2,7 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const adobeRegex = new RegExp('//(get\\.adobe\\.com/([a-z_-]+/)*flashplayer|www\\.macromedia\\.com/go/getflash|www\\.adobe\\.com/go/getflash)', 'i')
+const adobeRegex =
+  new RegExp('//(get\\.adobe\\.com/([a-z_-]+/)*flashplayer|www\\.macromedia\\.com/go/getflash|www\\.adobe\\.com/go/getflash|helpx\\.adobe\\.com/flash-player/([a-z_-]+/)*flash-player)', 'i')
 
 function blockFlashDetection () {
   const handler = {
@@ -31,12 +32,13 @@ if (adobeRegex.test(window.location.href)) {
 
 if (chrome.contentSettings.flashEnabled == 'allow') {
   document.addEventListener('click', (e) => {
-    if (e.target.href && e.target.href.match(adobeRegex)) {
+    let href = e.target.href || (e.target.parentNode && e.target.parentNode.href)
+    if (href && href.match(adobeRegex)) {
       e.preventDefault()
-      chrome.ipcRenderer.send('dispatch-action', JSON.stringify({
+      chrome.ipcRenderer.send('dispatch-action', JSON.stringify([{
         actionType: 'app-flash-permission-requested',
         location: window.location.href
-      }))
+      }]))
     }
   })
 }

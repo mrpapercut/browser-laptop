@@ -30,6 +30,10 @@ describe('bookmarksToolbar', function () {
   describe('configuration settings', function () {
     Brave.beforeAll(this)
 
+    beforeEach(function * () {
+      yield setup(this.app.client)
+    })
+
     it('shows the bookmarks toolbar if the setting is enabled', function * () {
       yield this.app.client
         .changeSetting(settings.SHOW_BOOKMARKS_TOOLBAR, true)
@@ -45,6 +49,7 @@ describe('bookmarksToolbar', function () {
 
   describe('when clicking a bookmark folder', function () {
     Brave.beforeEach(this)
+
     beforeEach(function * () {
       yield setup(this.app.client)
     })
@@ -59,11 +64,8 @@ describe('bookmarksToolbar', function () {
           parentFolderId: 0,
           tags: [siteTags.BOOKMARK_FOLDER]
         }, siteTags.BOOKMARK_FOLDER)
-        .waitUntil(function () {
-          return this.getAppState().then((val) => {
-            return findBookmarkFolder('demo1', val)
-          })
-        })
+        .waitForVisible('.bookmarkToolbarButton[title=demo1]')
+        .click(bookmarksToolbar)
         .click('.bookmarkToolbarButton[title=demo1]')
         .waitForVisible('.contextMenuItemText[data-l10n-id=emptyFolderItem]')
     })

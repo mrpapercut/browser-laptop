@@ -1,6 +1,6 @@
 {
   "name": "brave",
-  "version": "0.13.1",
+  "version": "0.13.5",
   "description": "Brave laptop and desktop browser",
   "main": "./app/index.js",
   "config": {
@@ -11,6 +11,7 @@
     "add-simulated-synopsis-visits": "node ./tools/addSimulatedSynopsisVisits.js",
     "build-installer": "node ./tools/buildInstaller.js",
     "build-package": "node ./tools/buildPackage.js",
+    "build-test": "cross-env NODE_ENV=test webpack",
     "check-security": "nsp check",
     "checks": "npm run check-security",
     "clean": "node ./tools/clean.js",
@@ -21,13 +22,15 @@
     "clean-tp-data": "node ./tools/clean.js userData TrackingProtection.dat",
     "docs": "jsdox js/actions/appActions.js js/actions/windowActions.js --output docs",
     "download-languages": "node ./tools/downloadLanguages",
+    "download-sync-client": "node ./tools/downloadSyncClient",
     "electron-rebuild": "electron-rebuild",
     "flow": "flow; test $? -eq 0 -o $? -eq 2",
     "lint": "standard",
-    "postinstall": "webpack",
+    "postinstall": "npm run download-sync-client && webpack",
     "preload-httpse": "node ./preload-httpse.js",
     "start-log": "node ./tools/start.js --user-data-dir=brave-development --debug=5858 --enable-logging=stderr --v=1 --enable-extension-activity-logging --enable-sandbox-logging --enable-dcheck",
     "start": "node ./tools/start.js --user-data-dir=brave-development --debug=5858 --enable-logging --v=0 --enable-extension-activity-logging --enable-sandbox-logging --enable-dcheck",
+    "start2": "node ./tools/start.js --user-data-dir=brave-development-2 --debug=5859 --enable-logging --v=0 --enable-extension-activity-logging --enable-sandbox-logging --enable-dcheck",
     "start-brk": "node ./tools/start.js --debug-brk=5858 -enable-logging --v=0 --enable-dcheck",
     "test": "cross-env NODE_ENV=test mocha --require babel-register --require babel-polyfill --recursive \"test/**/*Test.js\"",
     "unittest": "cross-env NODE_ENV=test mocha --require babel-register --require babel-polyfill --recursive \"test/unit/**/*Test.js\"",
@@ -95,11 +98,12 @@
     "keytar": "^3.0.0",
     "l20n": "^3.5.1",
     "ledger-balance": "^0.8.64",
-    "ledger-client": "^0.8.106",
+    "ledger-client": "^0.8.133",
     "ledger-geoip": "^0.8.75",
-    "ledger-publisher": "^0.8.108",
-    "lru_cache": "^1.0.0",
+    "ledger-publisher": "^0.8.124",
+    "lru-cache": "^1.0.0",
     "moment": "^2.15.1",
+    "niceware": "^1.0.4",
     "normalize-url": "^1.7.0",
     "parse-torrent": "^5.8.1",
     "prettier-bytes": "^1.0.3",
@@ -110,7 +114,7 @@
     "react-dnd": "^2.1.4",
     "react-dnd-html5-backend": "^2.1.2",
     "react-dom": "^15.0.1",
-    "spellchecker": "^3.3.1",
+    "spellchecker": "brave/node-spellchecker",
     "string.prototype.endswith": "^0.2.0",
     "string.prototype.startswith": "^0.2.0",
     "tablesort": "4.0.1",
@@ -118,7 +122,7 @@
     "tracking-protection": "1.1.x",
     "underscore": "1.8.3",
     "url-loader": "^0.5.7",
-    "webtorrent-remote": "0.0.9"
+    "webtorrent-remote": "^1.0.0"
   },
   "devDependencies": {
     "asar": "^0.11.0",
@@ -144,6 +148,7 @@
     "flow-bin": "^0.22.1",
     "git-rev-sync": "^1.8.0",
     "gulp": "^3.9.0",
+    "joi": "^10.2.2",
     "jsdom": "9.4.1",
     "jsdom-global": "2.0.0",
     "jsdox": "^0.4.9",
@@ -167,11 +172,11 @@
     "react-addons-perf": "^15.2.1",
     "react-addons-test-utils": "^15.4.1",
     "sinon": "^1.17.6",
-    "spectron": "brave/spectron#chromium54",
+    "spectron": "brave/spectron#chromium56",
     "sqlite3": "^3.1.1",
     "standard": "8.1.0",
     "style-loader": "^0.13.0",
-    "uglify-js": "https://github.com/mishoo/UglifyJS2#harmony",
+    "uglify-js-harmony": "^2.7.5",
     "webdriverio": "4.2.5",
     "webpack": "^1.12.9",
     "webpack-dev-server": "^1.14.0",
@@ -209,6 +214,6 @@
   },
   "engineStrict": true,
   "engines": {
-    "node": ">= 6.1.0"
+    "node": ">= 7.0.0"
   }
 }

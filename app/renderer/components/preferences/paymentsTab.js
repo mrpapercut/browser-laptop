@@ -11,13 +11,20 @@ const getSetting = require('../../../../js/settings').getSetting
 const settings = require('../../../../js/constants/settings')
 const ModalOverlay = require('../../../../js/components/modalOverlay')
 const coinbaseCountries = require('../../../../js/constants/coinbaseCountries')
+const {changeSetting} = require('../../lib/settingsUtil')
 const moment = require('moment')
 moment.locale(navigator.language)
+
+const {StyleSheet, css} = require('aphrodite/no-important')
+const globalStyles = require('../styles/global')
 
 // Components
 const Button = require('../../../../js/components/button')
 const {FormTextbox, RecoveryKeyTextbox} = require('../textbox')
 const {FormDropdown, SettingDropdown} = require('../dropdown')
+const {SettingsList, SettingItem, SettingCheckbox} = require('../settings')
+const LedgerTable = require('./ledgerTable')
+const PaymentHistory = require('./paymentHistory')
 
 class PaymentsTab extends ImmutableComponent {
   constructor () {
@@ -166,7 +173,6 @@ class PaymentsTab extends ImmutableComponent {
   }
 
   get tableContent () {
-    const {LedgerTable} = require('../../../../js/about/preferences')
     // TODO: This should be sortable. #2497
     return <LedgerTable ledgerData={this.props.ledgerData}
       settings={this.props.settings}
@@ -196,7 +202,6 @@ class PaymentsTab extends ImmutableComponent {
   }
 
   get paymentHistoryContent () {
-    const {PaymentHistory} = require('../../../../js/about/preferences')
     return <PaymentHistory ledgerData={this.props.ledgerData} />
   }
 
@@ -228,7 +233,6 @@ class PaymentsTab extends ImmutableComponent {
   get advancedSettingsContent () {
     const minDuration = this.props.ledgerData.getIn(['synopsisOptions', 'minDuration'])
     const minPublisherVisits = this.props.ledgerData.getIn(['synopsisOptions', 'minPublisherVisits'])
-    const {SettingsList, SettingItem, SettingCheckbox, changeSetting} = require('../../../../js/about/preferences')
 
     return <div className='board'>
       <div className='panel advancedSettings'>
@@ -251,9 +255,9 @@ class PaymentsTab extends ImmutableComponent {
             <SettingItem>
               <SettingDropdown
                 data-test-id='visitSelector'
-                defaultValue={minPublisherVisits || 5}
+                defaultValue={minPublisherVisits || 1}
                 onChange={changeSetting.bind(null, this.props.onChangeSetting, settings.MINIMUM_VISITS)}>>>
-                <option value='2'>2 visits</option>
+                <option value='1'>1 visits</option>
                 <option value='5'>5 visits</option>
                 <option value='10'>10 visits</option>
               </SettingDropdown>
@@ -295,22 +299,22 @@ class PaymentsTab extends ImmutableComponent {
     return <div className='board'>
       <div className='panel ledgerBackupContent'>
         <span data-l10n-id='ledgerBackupContent' />
-        <div className='copyKeyContainer'>
+        <div className={css(styles.copyKeyContainer)}>
           <div className='copyContainer'>
             <Button l10nId='copy' className='copyButton whiteButton' onClick={this.copyToClipboard.bind(this, paymentId)} />
           </div>
-          <div className='keyContainer'>
-            <h3 data-l10n-id='firstKey' />
-            <span>{paymentId}</span>
+          <div className={css(styles.keyContainer)}>
+            <h3 className={css(styles.keyContainer__h3)} data-l10n-id='firstKey' />
+            <span className={css(styles.keyContainer__span)}>{paymentId}</span>
           </div>
         </div>
-        <div className='copyKeyContainer'>
+        <div className={css(styles.copyKeyContainer)}>
           <div className='copyContainer'>
             <Button l10nId='copy' className='copyButton whiteButton' onClick={this.copyToClipboard.bind(this, passphrase)} />
           </div>
-          <div className='keyContainer'>
-            <h3 data-l10n-id='secondKey' />
-            <span>{passphrase}</span>
+          <div className={css(styles.keyContainer)}>
+            <h3 className={css(styles.keyContainer__h3)} data-l10n-id='secondKey' />
+            <span className={css(styles.keyContainer__span)}>{passphrase}</span>
           </div>
         </div>
       </div>
@@ -326,8 +330,6 @@ class PaymentsTab extends ImmutableComponent {
   }
 
   get ledgerRecoveryContent () {
-    const {SettingsList, SettingItem} = require('../../../../js/about/preferences')
-
     const l10nDataArgs = {
       balance: this.btcToCurrencyString(this.props.ledgerData.get('balance'))
     }
@@ -364,8 +366,8 @@ class PaymentsTab extends ImmutableComponent {
         : null
       }
       <div className='panel recoveryContent'>
-        <h4 data-l10n-id='ledgerRecoverySubtitle' />
-        <div className='ledgerRecoveryContent' data-l10n-id='ledgerRecoveryContent' />
+        <h4 className={css(styles.recoveryContent__h4)} data-l10n-id='ledgerRecoverySubtitle' />
+        <div className={css(styles.ledgerRecoveryContent)} data-l10n-id='ledgerRecoveryContent' />
         <SettingsList>
           <SettingItem>
             <h3 data-l10n-id='firstRecoveryKey' />
@@ -476,7 +478,6 @@ class PaymentsTab extends ImmutableComponent {
   }
 
   get enabledContent () {
-    const {SettingsList, SettingItem, changeSetting} = require('../../../../js/about/preferences')
     // TODO: report when funds are too low
     // TODO: support non-USD currency
     return <div>
@@ -541,7 +542,6 @@ class PaymentsTab extends ImmutableComponent {
   }
 
   render () {
-    const {SettingCheckbox} = require('../../../../js/about/preferences')
     return <div className='paymentsContainer'>
       {
       this.enabled && this.props.addFundsOverlayVisible
@@ -610,5 +610,34 @@ class PaymentsTab extends ImmutableComponent {
 function formattedTimeFromNow (timestamp) {
   return moment(new Date(timestamp)).fromNow()
 }
+
+const styles = StyleSheet.create({
+  copyKeyContainer: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    width: '75%',
+    margin: `${globalStyles.spacing.paymentsMargin} auto`
+  },
+
+  keyContainer: {
+    marginLeft: '2em'
+  },
+
+  keyContainer__h3: {
+    marginBottom: globalStyles.spacing.modalPanelHeaderMarginBottom
+  },
+
+  keyContainer__span: {
+    whiteSpace: 'nowrap'
+  },
+
+  recoveryContent__h4: {
+    marginBottom: globalStyles.spacing.paymentsMargin
+  },
+
+  ledgerRecoveryContent: {
+    marginBottom: globalStyles.spacing.paymentsMargin
+  }
+})
 
 module.exports = PaymentsTab

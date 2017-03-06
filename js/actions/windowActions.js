@@ -289,7 +289,7 @@ const windowActions = {
     const ipc = require('electron').ipcRenderer
     const origin = siteUtil.getOrigin(frameProps.get('location'))
     if (origin) {
-      appActions.clearMessageBoxes(origin)
+      appActions.clearNotifications(origin)
     }
     // If the frame was full screen, exit
     if (frameProps && frameProps.get('isFullScreen')) {
@@ -399,6 +399,34 @@ const windowActions = {
     dispatch({
       actionType: windowConstants.WINDOW_SET_TAB_PAGE_INDEX,
       index
+    })
+  },
+
+  /**
+   * Dispatches a message to the store to set the tab breakpoint.
+   *
+   * @param {Object} frameProps - the frame properties for the webview in question.
+   * @param {string} breakpoint - the tab breakpoint to change to
+   */
+  setTabBreakpoint: function (frameProps, breakpoint) {
+    dispatch({
+      actionType: windowConstants.WINDOW_SET_TAB_BREAKPOINT,
+      frameProps,
+      breakpoint
+    })
+  },
+
+  /**
+   * Dispatches a message to the store to set the current tab hover state.
+   *
+   * @param {Object} frameProps - the frame properties for the webview in question.
+   * @param {boolean} hoverState - whether or not mouse is over tab
+   */
+  setTabHoverState: function (frameProps, hoverState) {
+    dispatch({
+      actionType: windowConstants.WINDOW_SET_TAB_HOVER_STATE,
+      frameProps,
+      hoverState
     })
   },
 

@@ -140,13 +140,32 @@ span.buttonSeparator {
   }
 }
 
+.linkButton {
+  color: @braveOrange;
+  cursor: pointer;
+  font-size: 0.9rem;
+
+  &:not([disabled]):hover {
+    color: black;
+  }
+  &[disabled] {
+    color: @gray;
+  }
+}
+
 // for about:preferences
 .prefBody {
   .settingsList > .settingItem + button,
   .settingItem > span + button,
-  .paymentsContainer button:not(.close) {
+  .paymentsContainer button:not(.close),
+  .syncContainer .browserButton {
     font-size: 0.9rem;
     padding: 8px 20px;
+  }
+
+  .settingsList > .settingItem + button,
+  .settingItem > span + button,
+  .paymentsContainer button:not(.close) {
     margin: 0;
   }
 

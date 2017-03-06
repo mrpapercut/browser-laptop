@@ -1,23 +1,24 @@
 const appActions = require('../../js/actions/appActions')
-const messages = require('../..//js/constants/messages')
+const config = require('../../js/constants/config')
+const messages = require('../../js/constants/messages')
 const Immutable = require('immutable')
 const tabState = require('../common/state/tabState')
-const {app, extensions} = require('electron')
+const {app, BrowserWindow, extensions} = require('electron')
 const { makeImmutable } = require('../common/state/immutableUtil')
 
 let currentWebContents = {}
 
 const cleanupWebContents = (tabId) => {
-  delete currentWebContents[tabId]
-  setImmediate(() => {
+  if (currentWebContents[tabId]) {
+    delete currentWebContents[tabId]
     appActions.tabClosed({ tabId })
-  })
+  }
 }
 
 const getTabValue = function (tabId) {
   let tab = api.getWebContents(tabId)
   if (tab) {
-    let tabValue = makeImmutable(extensions.tabValue(tab))
+    let tabValue = makeImmutable(tab.tabValue())
     tabValue = tabValue.set('canGoBack', tab.canGoBack())
     tabValue = tabValue.set('canGoForward', tab.canGoForward())
     return tabValue.set('tabId', tabId)
@@ -27,9 +28,7 @@ const getTabValue = function (tabId) {
 const updateTab = (tabId) => {
   let tabValue = getTabValue(tabId)
   if (tabValue) {
-    setImmediate(() => {
-      appActions.tabUpdated(tabValue)
-    })
+    appActions.tabUpdated(tabValue)
   }
 }
 
@@ -79,26 +78,34 @@ const api = {
         hostWebContents.send(messages.SHORTCUT_NEW_FRAME, location, { frameOpts })
       }
     })
+
+    process.on('chrome-tabs-created', (tabId) => {
+      updateTab(tabId)
+    })
+
+    process.on('chrome-tabs-updated', (tabId) => {
+      updateTab(tabId)
+    })
+
+    process.on('chrome-tabs-removed', (tabId) => {
+      cleanupWebContents(tabId)
+    })
+
     app.on('web-contents-created', function (event, tab) {
-      if (extensions.isBackgroundPage(tab) || !tab.isGuest()) {
+      if (tab.isBackgroundPage() || !tab.isGuest()) {
         return
       }
       let tabId = tab.getId()
+
       tab.once('destroyed', cleanupWebContents.bind(null, tabId))
       tab.once('crashed', cleanupWebContents.bind(null, tabId))
       tab.once('close', cleanupWebContents.bind(null, tabId))
-      tab.on('set-active', function (evt, active) {
-        updateTab(tabId)
-      })
-      tab.on('set-tab-index', function (evt, index) {
-        updateTab(tabId)
-      })
       tab.on('page-favicon-updated', function (e, favicons) {
         if (favicons && favicons.length > 0) {
           // tab.setTabValues({
           //   faviconUrl: favicons[0]
           // })
-          // updateTab(tabId)
+          // updateTabDebounce(tabId)
         }
       })
       tab.on('unresponsive', () => {
@@ -107,48 +114,11 @@ const api = {
       tab.on('responsive', () => {
         console.log('responsive')
       })
-      tab.on('did-attach', () => {
-        updateTab(tabId)
-      })
-      tab.on('did-detach', () => {
-        updateTab(tabId)
-      })
-      tab.on('page-title-updated', function () {
-        updateTab(tabId)
-      })
-      tab.on('did-fail-load', function () {
-        updateTab(tabId)
-      })
-      tab.on('did-fail-provisional-load', function () {
-        updateTab(tabId)
-      })
-      tab.on('did-stop-loading', function () {
-        updateTab(tabId)
-      })
-      tab.on('navigation-entry-commited', function (evt, url) {
-        updateTab(tabId)
-      })
-      tab.on('did-navigate', function (evt, url) {
-        updateTab(tabId)
-      })
-      tab.on('did-navigate-in-page', function (evt, url, isMainFrame) {
-        updateTab(tabId)
-      })
-      tab.on('load-start', function (evt, url, isMainFrame, isErrorPage) {
-        if (isMainFrame) {
-          updateTab(tabId)
-        }
-      })
-      tab.on('did-finish-load', function () {
-        updateTab(tabId)
-      })
 
       currentWebContents[tabId] = tab
       let tabValue = getTabValue(tabId)
       if (tabValue) {
-        setImmediate(() => {
-          appActions.tabCreated(tabValue)
-        })
+        appActions.tabCreated(tabValue)
       }
     })
 
@@ -188,6 +158,20 @@ const api = {
 
   getWebContents: (tabId) => {
     return currentWebContents[tabId]
+  },
+
+  toggleDevTools: (state, action) => {
+    action = makeImmutable(action)
+    const tabId = action.get('tabId')
+    const tab = api.getWebContents(tabId)
+    if (tab && !tab.isDestroyed()) {
+      if (tab.isDevToolsOpened()) {
+        tab.closeDevTools()
+      } else {
+        tab.openDevTools()
+      }
+    }
+    return state
   },
 
   setAudioMuted: (state, action) => {
@@ -239,6 +223,22 @@ const api = {
     extensions.createTab(createProperties, (tab) => {
       cb && cb(tab)
     })
+  },
+
+  executeScriptInBackground: (script, cb) => {
+    const win = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        partition: 'default'
+      }
+    })
+    win.webContents.on('did-finish-load', (e) => {
+      win.webContents.executeScriptInTab(config.braveExtensionId, script, {}, (err, url, result) => {
+        cb(err, url, result)
+        setImmediate(() => win.close())
+      })
+    })
+    win.loadURL('about:blank')
   }
 }
 
